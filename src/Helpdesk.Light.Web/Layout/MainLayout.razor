@@ -1,0 +1,40 @@
+@inherits LayoutComponentBase
+
+<div class="shell-bg"></div>
+<div class="shell">
+    <header class="topbar">
+        <button type="button" class="menu-toggle" @onclick="ToggleNav" aria-label="Toggle navigation">☰</button>
+        <a href="/" class="brand">
+            <span class="brand-mark">HL</span>
+            <span class="brand-copy">
+                <strong>Helpdesk-Light</strong>
+                <small>MSP Ticket Operations</small>
+            </span>
+        </a>
+        <a href="/login" class="button-link">Sign In</a>
+    </header>
+
+    <div class="shell-body">
+        <aside class="sidebar @(isNavOpen ? "open" : string.Empty)">
+            <NavMenu OnNavigate="CloseNav" />
+        </aside>
+
+        <main class="main-content" @onclick="CloseNav">
+            @Body
+        </main>
+    </div>
+</div>
+
+@code {
+    private bool isNavOpen;
+
+    private void ToggleNav()
+    {
+        isNavOpen = !isNavOpen;
+    }
+
+    private void CloseNav()
+    {
+        isNavOpen = false;
+    }
+}

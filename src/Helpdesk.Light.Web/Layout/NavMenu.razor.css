@@ -1,0 +1,33 @@
+.nav-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.85rem;
+}
+
+.nav-item {
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    border: 1px solid transparent;
+    text-decoration: none;
+    color: var(--ink-900);
+    transition: all 160ms ease;
+}
+
+.nav-item span {
+    font-weight: 650;
+}
+
+.nav-item small {
+    margin-top: 0.15rem;
+    font-size: 0.76rem;
+    color: var(--ink-500);
+}
+
+.nav-item:hover,
+.nav-item.active {
+    background: linear-gradient(110deg, rgba(0, 92, 176, 0.1), rgba(255, 153, 102, 0.16));
+    border-color: rgba(0, 92, 176, 0.25);
+}
