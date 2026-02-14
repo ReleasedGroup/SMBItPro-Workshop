@@ -1,10 +1,11 @@
 using Helpdesk.Light.Application.Abstractions.Email;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Helpdesk.Light.Worker;
 
 public sealed class Worker(
     ILogger<Worker> logger,
-    IOutboundEmailService outboundEmailService) : BackgroundService
+    IServiceScopeFactory scopeFactory) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -12,6 +13,8 @@ public sealed class Worker(
         {
             try
             {
+                using IServiceScope scope = scopeFactory.CreateScope();
+                IOutboundEmailService outboundEmailService = scope.ServiceProvider.GetRequiredService<IOutboundEmailService>();
                 await outboundEmailService.DispatchPendingAsync(stoppingToken);
             }
             catch (Exception exception)
@@ -19,7 +22,14 @@ public sealed class Worker(
                 logger.LogError(exception, "Outbound dispatch cycle failed.");
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 }

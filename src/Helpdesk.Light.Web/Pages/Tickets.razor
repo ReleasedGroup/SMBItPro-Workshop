@@ -42,8 +42,20 @@ else
             @if (IsAdmin)
             {
                 <label>
-                    <span>Customer Id (Admin only)</span>
-                    <input @bind="newTicketCustomerIdText" placeholder="Guid" />
+                    <span>Customer (Admin only)</span>
+                    <InputSelect @bind-Value="newTicketCustomerId">
+                        @if (adminCustomers.Count == 0)
+                        {
+                            <option value="">No customers available</option>
+                        }
+                        else
+                        {
+                            @foreach (CustomerSummaryDto customer in adminCustomers)
+                            {
+                                <option value="@customer.Id">@customer.Name (@customer.Id)</option>
+                            }
+                        }
+                    </InputSelect>
                 </label>
             }
 
@@ -240,6 +252,7 @@ else
 }
 
 @code {
+    private readonly List<CustomerSummaryDto> adminCustomers = [];
     private readonly List<TicketSummaryDto> tickets = [];
 
     private TicketDetailDto? selectedTicket;
@@ -249,7 +262,7 @@ else
     private string newTicketSubject = string.Empty;
     private string newTicketDescription = string.Empty;
     private TicketPriority newTicketPriority = TicketPriority.Medium;
-    private string newTicketCustomerIdText = string.Empty;
+    private Guid? newTicketCustomerId;
     private IReadOnlyList<IBrowserFile> createAttachments = [];
 
     private string filterStatusText = string.Empty;
@@ -273,6 +286,7 @@ else
         Session.Changed += OnSessionChanged;
         if (Session.IsAuthenticated)
         {
+            await EnsureAdminCustomersLoadedAsync();
             await LoadTicketsAsync();
         }
     }
@@ -283,10 +297,13 @@ else
         {
             if (Session.IsAuthenticated)
             {
+                await EnsureAdminCustomersLoadedAsync();
                 await LoadTicketsAsync();
             }
             else
             {
+                adminCustomers.Clear();
+                newTicketCustomerId = null;
                 tickets.Clear();
                 selectedTicket = null;
             }
@@ -366,12 +383,22 @@ else
             return;
         }
 
+        if (IsAdmin)
+        {
+            await EnsureAdminCustomersLoadedAsync();
+            if (!newTicketCustomerId.HasValue)
+            {
+                statusMessage = "Select a customer before creating an admin ticket.";
+                return;
+            }
+        }
+
         isBusy = true;
         statusMessage = string.Empty;
 
         try
         {
-            Guid? customerId = IsAdmin ? ParseGuidNullable(newTicketCustomerIdText) : null;
+            Guid? customerId = IsAdmin ? newTicketCustomerId : null;
             CreateTicketRequest request = new(customerId, newTicketSubject, newTicketDescription, newTicketPriority);
             TicketSummaryDto created = await Api.CreateTicketAsync(request);
 
@@ -384,7 +411,10 @@ else
             newTicketSubject = string.Empty;
             newTicketDescription = string.Empty;
             newTicketPriority = TicketPriority.Medium;
-            newTicketCustomerIdText = string.Empty;
+            if (IsAdmin && !newTicketCustomerId.HasValue && adminCustomers.Count > 0)
+            {
+                newTicketCustomerId = adminCustomers[0].Id;
+            }
             createAttachments = [];
 
             await LoadTicketsAsync();
@@ -628,6 +658,30 @@ else
         }
 
         return null;
+    }
+
+    private async Task EnsureAdminCustomersLoadedAsync()
+    {
+        if (!IsAdmin)
+        {
+            adminCustomers.Clear();
+            newTicketCustomerId = null;
+            return;
+        }
+
+        if (adminCustomers.Count > 0)
+        {
+            return;
+        }
+
+        IReadOnlyList<CustomerSummaryDto> customers = await Api.ListCustomersAsync();
+        adminCustomers.Clear();
+        adminCustomers.AddRange(customers);
+
+        if (!newTicketCustomerId.HasValue && adminCustomers.Count > 0)
+        {
+            newTicketCustomerId = adminCustomers[0].Id;
+        }
     }
 
     public void Dispose()
