@@ -1,11 +1,13 @@
 @page "/login"
 @using Helpdesk.Light.Web.Models
-@inject HttpClient Http
+@inject HelpdeskApiClient Api
+@inject ClientSession Session
+@inject NavigationManager Navigation
 
 <PageTitle>Login</PageTitle>
 
 <h1>Sign In</h1>
-<p>Authenticate with a seeded account to test role-aware API access.</p>
+<p>Authenticate with a seeded account to unlock tenant-scoped ticket workflows.</p>
 
 <EditForm Model="model" OnValidSubmit="SubmitAsync" class="panel login-panel">
     <DataAnnotationsValidator />
@@ -13,12 +15,12 @@
 
     <label>
         <span>Email</span>
-        <InputText @bind-Value="model.Email" />
+        <InputText @bind-Value="model.Email" autocomplete="username" />
     </label>
 
     <label>
         <span>Password</span>
-        <InputText @bind-Value="model.Password" type="password" />
+        <InputText @bind-Value="model.Password" type="password" autocomplete="current-password" />
     </label>
 
     <button type="submit" disabled="@isSubmitting">@buttonCopy</button>
@@ -28,7 +30,7 @@
         <p class="status">@statusMessage</p>
     }
 
-    <p class="hint">Seed users: `admin@msp.local`, `tech@contoso.com`, `tech@fabrikam.com` with password `Pass!12345`.</p>
+    <p class="hint">Seed users: `admin@msp.local`, `tech@contoso.com`, `tech@fabrikam.com`, `user@contoso.com`, `user@fabrikam.com` with password `Pass!12345`.</p>
 </EditForm>
 
 @code {
@@ -47,12 +49,16 @@
 
         try
         {
-            LoginPayload request = new(model.Email, model.Password);
-            HttpResponseMessage response = await Http.PostAsJsonAsync("api/v1/auth/login", request);
+            LoginResponse? response = await Api.LoginAsync(new LoginRequest(model.Email, model.Password));
+            if (response is null)
+            {
+                statusMessage = "Login failed. Check your credentials.";
+                return;
+            }
 
-            statusMessage = response.IsSuccessStatusCode
-                ? "Login API call succeeded. Token issuance is active."
-                : "Login failed. Check credentials and API availability.";
+            Session.SetLogin(response);
+            statusMessage = "Authenticated successfully.";
+            Navigation.NavigateTo("/tickets", forceLoad: false);
         }
         catch
         {
@@ -63,6 +69,4 @@
             isSubmitting = false;
         }
     }
-
-    private sealed record LoginPayload(string Email, string Password);
 }

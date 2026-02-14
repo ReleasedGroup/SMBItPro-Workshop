@@ -8,5 +8,7 @@ public static class SeedDataConstants
     public const string AdminEmail = "admin@msp.local";
     public const string ContosoTechEmail = "tech@contoso.com";
     public const string FabrikamTechEmail = "tech@fabrikam.com";
+    public const string ContosoEndUserEmail = "user@contoso.com";
+    public const string FabrikamEndUserEmail = "user@fabrikam.com";
     public const string DefaultPassword = "Pass!12345";
 }

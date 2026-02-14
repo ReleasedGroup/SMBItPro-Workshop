@@ -1,0 +1,152 @@
+@page "/email-lab"
+@inject HelpdeskApiClient Api
+@inject ClientSession Session
+
+<PageTitle>Email Lab</PageTitle>
+
+<h1>Email Lab</h1>
+<p>Developer tool for testing inbound email ticket creation and outbound notification queue.</p>
+
+@if (!Session.IsAuthenticated || Session.Role != "MspAdmin")
+{
+    <section class="panel">
+        <p>Admin sign-in is required to use this page.</p>
+    </section>
+}
+else
+{
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>Inbound Email Simulator</h2>
+            <label>
+                <span>Sender Email</span>
+                <input @bind="senderEmail" />
+            </label>
+            <label>
+                <span>Subject</span>
+                <input @bind="subject" />
+            </label>
+            <label>
+                <span>Body</span>
+                <textarea rows="4" @bind="body"></textarea>
+            </label>
+            <button type="button" @onclick="ProcessInboundAsync" disabled="@isBusy">Process Inbound Message</button>
+        </section>
+
+        <section class="panel">
+            <h2>Outbound Queue</h2>
+            <button type="button" @onclick="RefreshOutboundAsync" disabled="@isBusy">Refresh Queue</button>
+            <button type="button" @onclick="DispatchOutboundAsync" disabled="@isBusy">Dispatch Pending</button>
+            @if (outbound.Count == 0)
+            {
+                <p>No outbound messages in queue.</p>
+            }
+            else
+            {
+                <div class="timeline">
+                    @foreach (OutboundEmailDto item in outbound)
+                    {
+                        <article class="timeline-item">
+                            <header>@item.Status | @item.CreatedUtc.ToLocalTime()</header>
+                            <p><strong>@item.Subject</strong> -> @item.ToAddress</p>
+                            <p>Attempts: @item.AttemptCount | Last Error: @item.LastError</p>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <section class="panel"><p class="status">@statusMessage</p></section>
+    }
+}
+
+@code {
+    private bool isBusy;
+    private string statusMessage = string.Empty;
+
+    private string senderEmail = "user@contoso.com";
+    private string subject = "Email ticket test";
+    private string body = "This ticket was created from the Email Lab.";
+
+    private readonly List<OutboundEmailDto> outbound = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.Role == "MspAdmin")
+        {
+            await RefreshOutboundAsync();
+        }
+    }
+
+    private async Task ProcessInboundAsync()
+    {
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            InboundEmailRequest request = new(
+                $"dev-{Guid.NewGuid():N}",
+                senderEmail,
+                subject,
+                body,
+                null,
+                DateTime.UtcNow,
+                null);
+
+            InboundEmailProcessResult result = await Api.ProcessInboundDevEmailAsync(request);
+            statusMessage = $"Inbound processed. Ticket: {result.TicketId}, mapped: {result.IsMapped}, duplicate: {result.IsDuplicate}.";
+            await RefreshOutboundAsync();
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Inbound processing failed: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task RefreshOutboundAsync()
+    {
+        isBusy = true;
+
+        try
+        {
+            IReadOnlyList<OutboundEmailDto> items = await Api.ListOutboundEmailAsync();
+            outbound.Clear();
+            outbound.AddRange(items);
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to load outbound queue: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task DispatchOutboundAsync()
+    {
+        isBusy = true;
+
+        try
+        {
+            await Api.DispatchOutboundAsync();
+            await RefreshOutboundAsync();
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Dispatch failed: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+}

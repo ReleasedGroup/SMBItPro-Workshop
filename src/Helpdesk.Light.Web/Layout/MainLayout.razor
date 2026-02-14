@@ -1,4 +1,7 @@
 @inherits LayoutComponentBase
+@implements IDisposable
+@inject ClientSession Session
+@inject NavigationManager Navigation
 
 <div class="shell-bg"></div>
 <div class="shell">
@@ -11,7 +14,17 @@
                 <small>MSP Ticket Operations</small>
             </span>
         </a>
-        <a href="/login" class="button-link">Sign In</a>
+        <div class="session-actions">
+            @if (Session.IsAuthenticated)
+            {
+                <span class="session-pill">@Session.Email (@Session.Role)</span>
+                <button type="button" class="button-link button-link-alt" @onclick="SignOut">Sign Out</button>
+            }
+            else
+            {
+                <a href="/login" class="button-link">Sign In</a>
+            }
+        </div>
     </header>
 
     <div class="shell-body">
@@ -36,5 +49,26 @@
     private void CloseNav()
     {
         isNavOpen = false;
+    }
+
+    protected override void OnInitialized()
+    {
+        Session.Changed += HandleSessionChanged;
+    }
+
+    private void HandleSessionChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void SignOut()
+    {
+        Session.Clear();
+        Navigation.NavigateTo("/login");
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= HandleSessionChanged;
     }
 }

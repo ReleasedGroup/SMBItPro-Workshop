@@ -1,0 +1,100 @@
+using System.Net;
+using System.Net.Http.Json;
+using Helpdesk.Light.Application.Contracts.Tickets;
+using Helpdesk.Light.Domain.Tickets;
+using Helpdesk.Light.Infrastructure.Data;
+
+namespace Helpdesk.Light.IntegrationTests;
+
+public sealed class TicketLifecycleIntegrationTests(HelpdeskApiFactory factory) : IClassFixture<HelpdeskApiFactory>
+{
+    [Fact]
+    public async Task EndUser_CanCreateViewAndReplyToTicket()
+    {
+        using HttpClient client = factory.CreateClient();
+        await TestAuth.LoginAndSetAuthHeaderAsync(client, SeedDataConstants.ContosoEndUserEmail);
+
+        HttpResponseMessage createResponse = await client.PostAsJsonAsync("/api/v1/tickets", new CreateTicketRequest(
+            null,
+            "Laptop cannot connect to Wi-Fi",
+            "Connection drops every 5 minutes.",
+            TicketPriority.Medium));
+
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+
+        TicketSummaryDto created = (await createResponse.Content.ReadFromJsonAsync<TicketSummaryDto>(TestAuth.JsonOptions))!;
+        Assert.Equal(TicketStatus.New, created.Status);
+
+        HttpResponseMessage listResponse = await client.GetAsync("/api/v1/tickets?take=50");
+        listResponse.EnsureSuccessStatusCode();
+
+        List<TicketSummaryDto> list = (await listResponse.Content.ReadFromJsonAsync<List<TicketSummaryDto>>(TestAuth.JsonOptions))!;
+        Assert.Contains(list, item => item.Id == created.Id);
+
+        HttpResponseMessage detailResponse = await client.GetAsync($"/api/v1/tickets/{created.Id}");
+        detailResponse.EnsureSuccessStatusCode();
+
+        TicketDetailDto detail = (await detailResponse.Content.ReadFromJsonAsync<TicketDetailDto>(TestAuth.JsonOptions))!;
+        Assert.Single(detail.Messages);
+        Assert.NotNull(detail.LatestAiSuggestion);
+
+        HttpResponseMessage replyResponse = await client.PostAsJsonAsync($"/api/v1/tickets/{created.Id}/messages", new TicketMessageCreateRequest("Adding more details about this issue."));
+        replyResponse.EnsureSuccessStatusCode();
+
+        TicketDetailDto afterReply = (await (await client.GetAsync($"/api/v1/tickets/{created.Id}")).Content.ReadFromJsonAsync<TicketDetailDto>(TestAuth.JsonOptions))!;
+        Assert.Equal(2, afterReply.Messages.Count);
+        Assert.True(afterReply.Messages[0].CreatedUtc <= afterReply.Messages[1].CreatedUtc);
+    }
+
+    [Fact]
+    public async Task Technician_CanAssignAndTransitionTicket()
+    {
+        using HttpClient userClient = factory.CreateClient();
+        TestAuth.LoginResponse endUserLogin = await TestAuth.LoginAndSetAuthHeaderAsync(userClient, SeedDataConstants.ContosoEndUserEmail);
+
+        TicketSummaryDto created = (await (await userClient.PostAsJsonAsync("/api/v1/tickets", new CreateTicketRequest(
+            null,
+            "Printer queue blocked",
+            "Jobs are stuck in queue.",
+            TicketPriority.Low))).Content.ReadFromJsonAsync<TicketSummaryDto>(TestAuth.JsonOptions))!;
+
+        using HttpClient techClient = factory.CreateClient();
+        TestAuth.LoginResponse techLogin = await TestAuth.LoginAndSetAuthHeaderAsync(techClient, SeedDataConstants.ContosoTechEmail);
+
+        HttpResponseMessage assignResponse = await techClient.PostAsJsonAsync($"/api/v1/tickets/{created.Id}/assign", new TicketAssignRequest(techLogin.UserId));
+        assignResponse.EnsureSuccessStatusCode();
+
+        HttpResponseMessage triageResponse = await techClient.PostAsJsonAsync($"/api/v1/tickets/{created.Id}/triage", new TicketTriageUpdateRequest(TicketPriority.High, "ServiceIncident"));
+        triageResponse.EnsureSuccessStatusCode();
+
+        HttpResponseMessage statusResponse = await techClient.PostAsJsonAsync($"/api/v1/tickets/{created.Id}/status", new TicketStatusUpdateRequest(TicketStatus.InProgress));
+        statusResponse.EnsureSuccessStatusCode();
+
+        TicketSummaryDto updated = (await statusResponse.Content.ReadFromJsonAsync<TicketSummaryDto>(TestAuth.JsonOptions))!;
+        Assert.Equal(TicketStatus.InProgress, updated.Status);
+
+        TicketDetailDto detail = (await (await techClient.GetAsync($"/api/v1/tickets/{created.Id}")).Content.ReadFromJsonAsync<TicketDetailDto>(TestAuth.JsonOptions))!;
+        Assert.Equal(TicketPriority.High, detail.Ticket.Priority);
+        Assert.Equal("ServiceIncident", detail.Ticket.Category);
+        Assert.Equal(techLogin.UserId, detail.Ticket.AssignedToUserId);
+    }
+
+    [Fact]
+    public async Task EndUser_CannotReadOtherTenantTicket()
+    {
+        using HttpClient contosoClient = factory.CreateClient();
+        await TestAuth.LoginAndSetAuthHeaderAsync(contosoClient, SeedDataConstants.ContosoEndUserEmail);
+
+        TicketSummaryDto created = (await (await contosoClient.PostAsJsonAsync("/api/v1/tickets", new CreateTicketRequest(
+            null,
+            "Need help with Teams",
+            "Audio not working.",
+            TicketPriority.Medium))).Content.ReadFromJsonAsync<TicketSummaryDto>(TestAuth.JsonOptions))!;
+
+        using HttpClient fabrikamClient = factory.CreateClient();
+        await TestAuth.LoginAndSetAuthHeaderAsync(fabrikamClient, SeedDataConstants.FabrikamEndUserEmail);
+
+        HttpResponseMessage forbidden = await fabrikamClient.GetAsync($"/api/v1/tickets/{created.Id}");
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+    }
+}

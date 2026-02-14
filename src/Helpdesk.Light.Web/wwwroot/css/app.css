@@ -106,6 +106,21 @@ input {
     font-size: 0.95rem;
 }
 
+select,
+textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 0.7rem;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.95rem;
+    font-family: inherit;
+}
+
+select {
+    height: 2.6rem;
+    padding: 0 0.75rem;
+}
+
 button {
     height: 2.5rem;
     border: none;
@@ -140,9 +155,59 @@ ul {
     color: var(--ink-700);
 }
 
+.ticket-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.ticket-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr 1fr 1fr;
+    gap: 0.45rem;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    background: #f9fbff;
+    color: var(--ink-900);
+    padding: 0.6rem 0.7rem;
+    text-align: left;
+    height: auto;
+}
+
+.ticket-row.selected {
+    border-color: rgba(10, 77, 144, 0.55);
+    background: linear-gradient(110deg, rgba(31, 120, 209, 0.16), rgba(240, 135, 75, 0.16));
+}
+
+.timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 0.8rem 0 1rem 0;
+}
+
+.timeline-item {
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    background: #fdfefe;
+}
+
+.timeline-item > header {
+    font-size: 0.78rem;
+    color: var(--ink-500);
+    margin-bottom: 0.25rem;
+}
+
 @media (max-width: 900px) {
     .kpi-grid,
     .panel-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ticket-row {
         grid-template-columns: 1fr;
     }
 }

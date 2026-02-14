@@ -1,16 +1,25 @@
+using Helpdesk.Light.Application.Abstractions.Email;
+
 namespace Helpdesk.Light.Worker;
 
-public class Worker(ILogger<Worker> logger) : BackgroundService
+public sealed class Worker(
+    ILogger<Worker> logger,
+    IOutboundEmailService outboundEmailService) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (logger.IsEnabled(LogLevel.Information))
+            try
             {
-                logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
+                await outboundEmailService.DispatchPendingAsync(stoppingToken);
             }
-            await Task.Delay(1000, stoppingToken);
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "Outbound dispatch cycle failed.");
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
         }
     }
 }

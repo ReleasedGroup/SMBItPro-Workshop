@@ -1,22 +1,28 @@
-@using Microsoft.AspNetCore.Components.Routing
-
 <nav class="nav-wrap" aria-label="Main navigation">
-    <a href="/" class="nav-item" @onclick="HandleNavigate" @onclick:preventDefault="false">
+    <NavLink href="/" class="nav-item" @onclick="HandleNavigate" Match="NavLinkMatch.All">
         <span>Dashboard</span>
         <small>Overview and queue health</small>
-    </a>
-    <a href="/tickets" class="nav-item" @onclick="HandleNavigate" @onclick:preventDefault="false">
+    </NavLink>
+
+    <NavLink href="/tickets" class="nav-item" @onclick="HandleNavigate">
         <span>Tickets</span>
-        <small>Open workload and ownership</small>
-    </a>
-    <a href="/customers" class="nav-item" @onclick="HandleNavigate" @onclick:preventDefault="false">
+        <small>Portal and technician workspace</small>
+    </NavLink>
+
+    <NavLink href="/customers" class="nav-item" @onclick="HandleNavigate">
         <span>Customers</span>
         <small>Tenant and domain mappings</small>
-    </a>
-    <a href="/login" class="nav-item" @onclick="HandleNavigate" @onclick:preventDefault="false">
+    </NavLink>
+
+    <NavLink href="/email-lab" class="nav-item" @onclick="HandleNavigate">
+        <span>Email Lab</span>
+        <small>Inbound and outbound simulation</small>
+    </NavLink>
+
+    <NavLink href="/login" class="nav-item" @onclick="HandleNavigate">
         <span>Authentication</span>
         <small>Role-based access</small>
-    </a>
+    </NavLink>
 </nav>
 
 @code {

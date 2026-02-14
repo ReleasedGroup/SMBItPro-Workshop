@@ -44,6 +44,29 @@ public static class SeedData
         await EnsureUserAsync(userManager, SeedDataConstants.AdminEmail, "MSP Admin", null, RoleNames.MspAdmin, cancellationToken);
         await EnsureUserAsync(userManager, SeedDataConstants.ContosoTechEmail, "Contoso Tech", SeedDataConstants.ContosoCustomerId, RoleNames.Technician, cancellationToken);
         await EnsureUserAsync(userManager, SeedDataConstants.FabrikamTechEmail, "Fabrikam Tech", SeedDataConstants.FabrikamCustomerId, RoleNames.Technician, cancellationToken);
+        await EnsureUserAsync(userManager, SeedDataConstants.ContosoEndUserEmail, "Contoso User", SeedDataConstants.ContosoCustomerId, RoleNames.EndUser, cancellationToken);
+        await EnsureUserAsync(userManager, SeedDataConstants.FabrikamEndUserEmail, "Fabrikam User", SeedDataConstants.FabrikamCustomerId, RoleNames.EndUser, cancellationToken);
+
+        if (!await dbContext.KnowledgeArticles.AnyAsync(cancellationToken))
+        {
+            dbContext.KnowledgeArticles.AddRange(
+                new Domain.Ai.KnowledgeArticle(
+                    Guid.Parse("01af40de-97f7-44a8-848e-84186f6f2f5d"),
+                    null,
+                    "Password Reset Basics",
+                    "Validate identity before resetting credentials. Enforce MFA reset checks.",
+                    "Published",
+                    DateTime.UtcNow),
+                new Domain.Ai.KnowledgeArticle(
+                    Guid.Parse("3d22ec72-c57e-4fbc-8135-7d8fd6b4be45"),
+                    null,
+                    "Service Outage Triage",
+                    "Confirm scope, impacted services, and rollback path. Provide 30 minute status updates.",
+                    "Published",
+                    DateTime.UtcNow));
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
     }
 
     private static async Task EnsureUserAsync(
@@ -75,12 +98,24 @@ public static class SeedData
             return;
         }
 
-        existing.CustomerId = customerId;
-        existing.DisplayName = displayName;
-        existing.UserName = email;
+        bool requiresUpdate =
+            existing.CustomerId != customerId ||
+            !string.Equals(existing.DisplayName, displayName, StringComparison.Ordinal) ||
+            !string.Equals(existing.UserName, email, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(existing.Email, email, StringComparison.OrdinalIgnoreCase) ||
+            !existing.EmailConfirmed;
 
-        IdentityResult updateResult = await userManager.UpdateAsync(existing);
-        EnsureSucceeded(updateResult, $"Failed to update user '{email}'.");
+        if (requiresUpdate)
+        {
+            existing.CustomerId = customerId;
+            existing.DisplayName = displayName;
+            existing.UserName = email;
+            existing.Email = email;
+            existing.EmailConfirmed = true;
+
+            IdentityResult updateResult = await userManager.UpdateAsync(existing);
+            EnsureSucceeded(updateResult, $"Failed to update user '{email}'.");
+        }
 
         if (!await userManager.IsInRoleAsync(existing, role))
         {
