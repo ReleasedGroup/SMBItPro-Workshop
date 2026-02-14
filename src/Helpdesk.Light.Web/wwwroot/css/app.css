@@ -1,0 +1,148 @@
+:root {
+    --brand-500: #1f78d1;
+    --brand-600: #1263b5;
+    --brand-700: #0a4d90;
+    --accent-500: #f0874b;
+    --ink-900: #1a2433;
+    --ink-700: #31445f;
+    --ink-500: #60738f;
+    --line: #d8e2ef;
+    --shadow-soft: 0 14px 28px rgba(18, 46, 84, 0.08);
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+    font-family: "Manrope", "Segoe UI", sans-serif;
+    color: var(--ink-900);
+    background: #eef2f8;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+a {
+    color: inherit;
+}
+
+h1,
+h2,
+h3 {
+    margin-top: 0;
+    font-family: "DM Serif Display", Georgia, serif;
+    letter-spacing: 0.01em;
+}
+
+h1 {
+    font-size: clamp(1.7rem, 1.2rem + 2vw, 2.5rem);
+    margin-bottom: 0.6rem;
+}
+
+h2 {
+    font-size: 1.15rem;
+    margin-bottom: 0.4rem;
+}
+
+p {
+    margin-top: 0;
+    color: var(--ink-700);
+}
+
+.hero {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 1rem;
+}
+
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.9rem;
+}
+
+.kpi-card,
+.panel {
+    border: 1px solid var(--line);
+    border-radius: 0.95rem;
+    padding: 1rem;
+    background: white;
+}
+
+.kpi-card strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--brand-700);
+}
+
+.panel-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.9rem;
+}
+
+.login-panel {
+    max-width: 34rem;
+}
+
+label {
+    display: block;
+    margin-bottom: 0.8rem;
+}
+
+label > span {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-weight: 600;
+}
+
+input {
+    width: 100%;
+    height: 2.6rem;
+    border: 1px solid var(--line);
+    border-radius: 0.7rem;
+    padding: 0 0.75rem;
+    font-size: 0.95rem;
+}
+
+button {
+    height: 2.5rem;
+    border: none;
+    border-radius: 0.7rem;
+    padding: 0 0.9rem;
+    background: linear-gradient(120deg, var(--brand-500), var(--brand-700));
+    color: white;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+button:disabled {
+    opacity: 0.7;
+    cursor: default;
+}
+
+.status {
+    margin-top: 0.8rem;
+    color: var(--ink-900);
+    font-weight: 600;
+}
+
+.hint {
+    margin-top: 0.8rem;
+    font-size: 0.82rem;
+    color: var(--ink-500);
+}
+
+ul {
+    margin: 0;
+    padding-left: 1rem;
+    color: var(--ink-700);
+}
+
+@media (max-width: 900px) {
+    .kpi-grid,
+    .panel-grid {
+        grid-template-columns: 1fr;
+    }
+}

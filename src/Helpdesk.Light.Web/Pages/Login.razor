@@ -1,0 +1,68 @@
+@page "/login"
+@using Helpdesk.Light.Web.Models
+@inject HttpClient Http
+
+<PageTitle>Login</PageTitle>
+
+<h1>Sign In</h1>
+<p>Authenticate with a seeded account to test role-aware API access.</p>
+
+<EditForm Model="model" OnValidSubmit="SubmitAsync" class="panel login-panel">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <label>
+        <span>Email</span>
+        <InputText @bind-Value="model.Email" />
+    </label>
+
+    <label>
+        <span>Password</span>
+        <InputText @bind-Value="model.Password" type="password" />
+    </label>
+
+    <button type="submit" disabled="@isSubmitting">@buttonCopy</button>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <p class="status">@statusMessage</p>
+    }
+
+    <p class="hint">Seed users: `admin@msp.local`, `tech@contoso.com`, `tech@fabrikam.com` with password `Pass!12345`.</p>
+</EditForm>
+
+@code {
+    private readonly LoginFormModel model = new();
+
+    private bool isSubmitting;
+
+    private string statusMessage = string.Empty;
+
+    private string buttonCopy => isSubmitting ? "Signing in..." : "Sign In";
+
+    private async Task SubmitAsync()
+    {
+        isSubmitting = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            LoginPayload request = new(model.Email, model.Password);
+            HttpResponseMessage response = await Http.PostAsJsonAsync("api/v1/auth/login", request);
+
+            statusMessage = response.IsSuccessStatusCode
+                ? "Login API call succeeded. Token issuance is active."
+                : "Login failed. Check credentials and API availability.";
+        }
+        catch
+        {
+            statusMessage = "Unable to contact API. Verify the backend is running and ApiBaseUrl is configured.";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private sealed record LoginPayload(string Email, string Password);
+}

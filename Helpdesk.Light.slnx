@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Helpdesk.Light.Api/Helpdesk.Light.Api.csproj" />
+    <Project Path="src/Helpdesk.Light.Application/Helpdesk.Light.Application.csproj" />
+    <Project Path="src/Helpdesk.Light.Domain/Helpdesk.Light.Domain.csproj" />
+    <Project Path="src/Helpdesk.Light.Infrastructure/Helpdesk.Light.Infrastructure.csproj" />
+    <Project Path="src/Helpdesk.Light.Web/Helpdesk.Light.Web.csproj" />
+    <Project Path="src/Helpdesk.Light.Worker/Helpdesk.Light.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Helpdesk.Light.IntegrationTests/Helpdesk.Light.IntegrationTests.csproj" />
+    <Project Path="tests/Helpdesk.Light.UnitTests/Helpdesk.Light.UnitTests.csproj" />
+  </Folder>
+</Solution>
