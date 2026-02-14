@@ -31,7 +31,7 @@ dotnet test Helpdesk.Light.slnx
 dotnet run --project src/Helpdesk.Light.Api
 ```
 
-Default API URL (from launch settings): `http://localhost:5035`
+Default API URL (from launch settings): `http://localhost:5283`
 
 Seeded users:
 
