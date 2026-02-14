@@ -46,11 +46,20 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
+string[] frontendAllowedOrigins = builder.Configuration
+    .GetSection("Cors:Frontend:AllowedOrigins")
+    .Get<string[]>() ?? Array.Empty<string>();
+
+if (frontendAllowedOrigins.Length == 0)
+{
+    frontendAllowedOrigins = new[] { "http://localhost:5006", "https://localhost:7262" };
+}
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5006", "https://localhost:7262")
+        policy.WithOrigins(frontendAllowedOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
