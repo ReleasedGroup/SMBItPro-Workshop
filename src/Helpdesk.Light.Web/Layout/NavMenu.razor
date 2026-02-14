@@ -1,22 +1,66 @@
-@using Microsoft.AspNetCore.Components.Routing
+@inject ClientSession Session
 
 <nav class="nav-wrap" aria-label="Main navigation">
-    <a href="/" class="nav-item" @onclick="HandleNavigate" @onclick:preventDefault="false">
-        <span>Dashboard</span>
-        <small>Overview and queue health</small>
-    </a>
-    <a href="/tickets" class="nav-item" @onclick="HandleNavigate" @onclick:preventDefault="false">
-        <span>Tickets</span>
-        <small>Open workload and ownership</small>
-    </a>
-    <a href="/customers" class="nav-item" @onclick="HandleNavigate" @onclick:preventDefault="false">
-        <span>Customers</span>
-        <small>Tenant and domain mappings</small>
-    </a>
-    <a href="/login" class="nav-item" @onclick="HandleNavigate" @onclick:preventDefault="false">
-        <span>Authentication</span>
-        <small>Role-based access</small>
-    </a>
+    <header class="nav-head">
+        <p class="nav-kicker">Workspace</p>
+        <h2 class="nav-title">Control Center</h2>
+        <p class="nav-subtitle">Move between dashboards, ticketing, and tenant operations.</p>
+        @if (Session.IsAuthenticated)
+        {
+            <p class="nav-chip">@Session.Role · @Session.Email</p>
+        }
+    </header>
+
+    <div class="nav-items">
+        <NavLink href="/" class="nav-item" @onclick="HandleNavigate" Match="NavLinkMatch.All">
+            <span class="nav-icon">DB</span>
+            <span class="nav-copy">
+                <span class="nav-label">Dashboard</span>
+                <small>Overview and queue health</small>
+            </span>
+            <span class="nav-arrow" aria-hidden="true">></span>
+        </NavLink>
+
+        <NavLink href="/tickets" class="nav-item" @onclick="HandleNavigate">
+            <span class="nav-icon">TK</span>
+            <span class="nav-copy">
+                <span class="nav-label">Tickets</span>
+                <small>Portal and technician workspace</small>
+            </span>
+            <span class="nav-arrow" aria-hidden="true">></span>
+        </NavLink>
+
+        <NavLink href="/customers" class="nav-item" @onclick="HandleNavigate">
+            <span class="nav-icon">CU</span>
+            <span class="nav-copy">
+                <span class="nav-label">Customers</span>
+                <small>Tenant and domain mappings</small>
+            </span>
+            <span class="nav-arrow" aria-hidden="true">></span>
+        </NavLink>
+
+        <NavLink href="/email-lab" class="nav-item" @onclick="HandleNavigate">
+            <span class="nav-icon">EM</span>
+            <span class="nav-copy">
+                <span class="nav-label">Email Lab</span>
+                <small>Inbound and outbound simulation</small>
+            </span>
+            <span class="nav-arrow" aria-hidden="true">></span>
+        </NavLink>
+
+        <NavLink href="/login" class="nav-item" @onclick="HandleNavigate">
+            <span class="nav-icon">AU</span>
+            <span class="nav-copy">
+                <span class="nav-label">Authentication</span>
+                <small>Role-based access</small>
+            </span>
+            <span class="nav-arrow" aria-hidden="true">></span>
+        </NavLink>
+    </div>
+
+    <footer class="nav-foot">
+        <p>Tip: use Email Lab to simulate helpdesk thread continuity.</p>
+    </footer>
 </nav>
 
 @code {

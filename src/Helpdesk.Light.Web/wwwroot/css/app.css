@@ -10,6 +10,16 @@
     --shadow-soft: 0 14px 28px rgba(18, 46, 84, 0.08);
 }
 
+@keyframes bootRailShift {
+    0% {
+        transform: translateX(-78%);
+    }
+
+    100% {
+        transform: translateX(188%);
+    }
+}
+
 html,
 body {
     margin: 0;
@@ -106,6 +116,21 @@ input {
     font-size: 0.95rem;
 }
 
+select,
+textarea {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 0.7rem;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.95rem;
+    font-family: inherit;
+}
+
+select {
+    height: 2.6rem;
+    padding: 0 0.75rem;
+}
+
 button {
     height: 2.5rem;
     border: none;
@@ -140,9 +165,239 @@ ul {
     color: var(--ink-700);
 }
 
+.ticket-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.ticket-row {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr 1fr 1fr;
+    gap: 0.45rem;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    background: #f9fbff;
+    color: var(--ink-900);
+    padding: 0.6rem 0.7rem;
+    text-align: left;
+    height: auto;
+}
+
+.ticket-row.selected {
+    border-color: rgba(10, 77, 144, 0.55);
+    background: linear-gradient(110deg, rgba(31, 120, 209, 0.16), rgba(240, 135, 75, 0.16));
+}
+
+.timeline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 0.8rem 0 1rem 0;
+}
+
+.timeline-item {
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    background: #fdfefe;
+}
+
+.timeline-item > header {
+    font-size: 0.78rem;
+    color: var(--ink-500);
+    margin-bottom: 0.25rem;
+}
+
 @media (max-width: 900px) {
     .kpi-grid,
     .panel-grid {
         grid-template-columns: 1fr;
+    }
+
+    .ticket-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1000;
+    padding: 0.7rem 3rem 0.7rem 1rem;
+    border-top: 1px solid #f2d58f;
+    background: #fff4cf;
+    color: #5d4a14;
+    box-shadow: 0 -6px 18px rgba(26, 36, 51, 0.08);
+    font-size: 0.88rem;
+}
+
+#blazor-error-ui .reload {
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+#blazor-error-ui .dismiss {
+    position: absolute;
+    right: 0.95rem;
+    top: 0.55rem;
+    cursor: pointer;
+}
+
+.boot-shell {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 1.25rem;
+    background:
+        radial-gradient(62rem 30rem at -8% -8%, rgba(240, 135, 75, 0.32), transparent 60%),
+        radial-gradient(68rem 36rem at 112% 15%, rgba(31, 120, 209, 0.26), transparent 60%),
+        linear-gradient(180deg, #f4f8fd 0%, #e9eef7 100%);
+}
+
+.boot-card {
+    width: min(42rem, 100%);
+    border: 1px solid rgba(49, 68, 95, 0.17);
+    border-radius: 1.2rem;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 20px 44px rgba(14, 46, 89, 0.12);
+    padding: clamp(1rem, 3vw, 1.75rem);
+}
+
+.boot-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.72rem;
+}
+
+.boot-mark {
+    width: 2.15rem;
+    height: 2.15rem;
+    border-radius: 0.7rem;
+    display: inline-grid;
+    place-items: center;
+    color: white;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    background: linear-gradient(140deg, var(--brand-500), var(--brand-700));
+    box-shadow: 0 10px 18px rgba(10, 77, 144, 0.3);
+}
+
+.boot-copy {
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 1.1;
+}
+
+.boot-copy strong {
+    font-size: 1.01rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+}
+
+.boot-copy small {
+    margin-top: 0.14rem;
+    color: var(--ink-500);
+    font-size: 0.72rem;
+}
+
+.boot-title {
+    margin: 1rem 0 0;
+    font-size: clamp(1.45rem, 1.1rem + 1.2vw, 2rem);
+    line-height: 1.08;
+}
+
+.boot-subtitle {
+    margin: 0.65rem 0 0;
+    max-width: 33rem;
+    color: var(--ink-700);
+}
+
+.boot-progress-wrap {
+    margin-top: 1.05rem;
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+}
+
+.loading-progress {
+    width: 4.55rem;
+    height: 4.55rem;
+    flex: 0 0 auto;
+}
+
+.loading-progress circle {
+    fill: none;
+}
+
+.loading-progress circle:first-child {
+    stroke: rgba(49, 68, 95, 0.16);
+    stroke-width: 8;
+}
+
+.loading-progress circle:last-child {
+    stroke: var(--brand-700);
+    stroke-width: 8;
+    stroke-linecap: round;
+    transform-origin: 50% 50%;
+    transform: rotate(-90deg);
+    stroke-dasharray: 251.2;
+    stroke-dashoffset: calc(251.2 - (251.2 * var(--blazor-load-percentage, 0%)) / 100);
+    transition: stroke-dashoffset 160ms ease;
+}
+
+.boot-progress-copy {
+    min-width: 0;
+}
+
+.loading-progress-text {
+    margin: 0;
+    font-weight: 700;
+    color: var(--brand-700);
+}
+
+.boot-hint {
+    margin: 0.3rem 0 0;
+    font-size: 0.79rem;
+    color: var(--ink-500);
+}
+
+.boot-rail {
+    margin-top: 1rem;
+    position: relative;
+    height: 0.5rem;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(49, 68, 95, 0.14);
+}
+
+.boot-rail-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 42%;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(100deg, rgba(31, 120, 209, 0.22), var(--brand-700), rgba(240, 135, 75, 0.65));
+    animation: bootRailShift 1.3s ease-in-out infinite alternate;
+}
+
+@media (max-width: 700px) {
+    .boot-shell {
+        padding: 0.9rem;
+    }
+
+    .boot-card {
+        border-radius: 0.95rem;
+    }
+
+    .boot-progress-wrap {
+        align-items: flex-start;
     }
 }

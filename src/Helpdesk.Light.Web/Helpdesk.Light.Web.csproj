@@ -12,4 +12,9 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.3" PrivateAssets="all" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Helpdesk.Light.Application\Helpdesk.Light.Application.csproj" />
+    <ProjectReference Include="..\Helpdesk.Light.Domain\Helpdesk.Light.Domain.csproj" />
+  </ItemGroup>
+
 </Project>

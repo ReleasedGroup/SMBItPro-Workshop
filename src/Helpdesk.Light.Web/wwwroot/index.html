@@ -18,11 +18,35 @@
 
 <body>
     <div id="app">
-        <svg class="loading-progress">
-            <circle r="40%" cx="50%" cy="50%" />
-            <circle r="40%" cx="50%" cy="50%" />
-        </svg>
-        <div class="loading-progress-text"></div>
+        <div class="boot-shell">
+            <section class="boot-card" role="status" aria-live="polite">
+                <header class="boot-brand">
+                    <span class="boot-mark">HL</span>
+                    <span class="boot-copy">
+                        <strong>Helpdesk-Light</strong>
+                        <small>MSP Ticket Operations</small>
+                    </span>
+                </header>
+
+                <h1 class="boot-title">Preparing your helpdesk workspace</h1>
+                <p class="boot-subtitle">Initializing tenant boundaries, ticket channels, and AI-assisted operations.</p>
+
+                <div class="boot-progress-wrap">
+                    <svg class="loading-progress" viewBox="0 0 100 100" aria-hidden="true">
+                        <circle r="40%" cx="50%" cy="50%" />
+                        <circle r="40%" cx="50%" cy="50%" />
+                    </svg>
+                    <div class="boot-progress-copy">
+                        <p class="loading-progress-text">Starting platform...</p>
+                        <p class="boot-hint">First load can take a little longer while WebAssembly files cache.</p>
+                    </div>
+                </div>
+
+                <div class="boot-rail" aria-hidden="true">
+                    <span class="boot-rail-fill"></span>
+                </div>
+            </section>
+        </div>
     </div>
 
     <div id="blazor-error-ui">

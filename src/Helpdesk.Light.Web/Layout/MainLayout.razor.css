@@ -123,6 +123,35 @@
     background: var(--brand-600);
 }
 
+.button-link-alt {
+    background: white;
+    color: var(--brand-700);
+    border: 1px solid var(--line);
+}
+
+.button-link-alt:hover {
+    background: #f5f8fc;
+}
+
+.session-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.session-pill {
+    max-width: 18rem;
+    font-size: 0.76rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: 0.55rem;
+    border: 1px solid var(--line);
+    background: white;
+    color: var(--ink-700);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 @media (max-width: 920px) {
     .menu-toggle {
         display: inline-grid;

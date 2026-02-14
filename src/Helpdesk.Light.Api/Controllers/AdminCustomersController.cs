@@ -1,4 +1,6 @@
 using Helpdesk.Light.Application.Abstractions;
+using Helpdesk.Light.Application.Abstractions.Ai;
+using Helpdesk.Light.Application.Contracts.Ai;
 using Helpdesk.Light.Application.Contracts;
 using Helpdesk.Light.Domain.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +11,9 @@ namespace Helpdesk.Light.Api.Controllers;
 [ApiController]
 [Route("api/v1/admin/customers")]
 [Authorize(Roles = RoleNames.MspAdmin)]
-public sealed class AdminCustomersController(ICustomerAdministrationService customerService) : ControllerBase
+public sealed class AdminCustomersController(
+    ICustomerAdministrationService customerService,
+    ICustomerAiPolicyService customerAiPolicyService) : ControllerBase
 {
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<CustomerSummaryDto>>(StatusCodes.Status200OK)]
@@ -45,6 +49,22 @@ public sealed class AdminCustomersController(ICustomerAdministrationService cust
         catch (InvalidOperationException exception)
         {
             return Conflict(new { message = exception.Message });
+        }
+    }
+
+    [HttpPatch("{customerId:guid}/ai-policy")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult> UpdateAiPolicy(Guid customerId, [FromBody] CustomerAiPolicyUpdateRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await customerAiPolicyService.UpdatePolicyAsync(customerId, request, cancellationToken);
+            return NoContent();
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
         }
     }
 }

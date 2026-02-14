@@ -1,22 +1,691 @@
 @page "/tickets"
+@inject HelpdeskApiClient Api
+@inject ClientSession Session
+@implements IDisposable
 
 <PageTitle>Tickets</PageTitle>
 
 <h1>Tickets Workspace</h1>
-<p>Queue and ticket workflow pages are scaffolded and ready to connect to the API in the next implementation phase.</p>
+<p>Unified view for end-user ticket tracking and technician queue operations.</p>
 
-<div class="panel-grid">
+@if (!Session.IsAuthenticated)
+{
     <section class="panel">
-        <h2>Queue Filters</h2>
-        <ul>
-            <li>Status</li>
-            <li>Priority</li>
-            <li>Customer</li>
-            <li>Assignee</li>
-        </ul>
+        <h2>Authentication Required</h2>
+        <p>Sign in to create or manage tickets.</p>
+        <a href="/login" class="button-link">Go to Login</a>
     </section>
+}
+else
+{
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>Create Ticket</h2>
+            <label>
+                <span>Subject</span>
+                <input @bind="newTicketSubject" />
+            </label>
+            <label>
+                <span>Description</span>
+                <textarea rows="4" @bind="newTicketDescription"></textarea>
+            </label>
+            <label>
+                <span>Priority</span>
+                <select @bind="newTicketPriority">
+                    @foreach (TicketPriority value in Enum.GetValues<TicketPriority>())
+                    {
+                        <option value="@value">@value</option>
+                    }
+                </select>
+            </label>
+
+            @if (IsAdmin)
+            {
+                <label>
+                    <span>Customer (Admin only)</span>
+                    <InputSelect @bind-Value="newTicketCustomerId">
+                        @if (adminCustomers.Count == 0)
+                        {
+                            <option value="">No customers available</option>
+                        }
+                        else
+                        {
+                            @foreach (CustomerSummaryDto customer in adminCustomers)
+                            {
+                                <option value="@customer.Id">@customer.Name (@customer.Id)</option>
+                            }
+                        }
+                    </InputSelect>
+                </label>
+            }
+
+            <label>
+                <span>Attachments</span>
+                <InputFile OnChange="OnCreateAttachmentChange" multiple />
+            </label>
+
+            <button type="button" @onclick="CreateTicketAsync" disabled="@isBusy">Create Ticket</button>
+        </section>
+
+        <section class="panel">
+            <h2>Queue Filters</h2>
+            <label>
+                <span>Status</span>
+                <select @bind="filterStatusText">
+                    <option value="">Any</option>
+                    @foreach (TicketStatus value in Enum.GetValues<TicketStatus>())
+                    {
+                        <option value="@value">@value</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <span>Priority</span>
+                <select @bind="filterPriorityText">
+                    <option value="">Any</option>
+                    @foreach (TicketPriority value in Enum.GetValues<TicketPriority>())
+                    {
+                        <option value="@value">@value</option>
+                    }
+                </select>
+            </label>
+            @if (IsAdmin)
+            {
+                <label>
+                    <span>Customer Id</span>
+                    <input @bind="filterCustomerIdText" placeholder="Guid" />
+                </label>
+            }
+            @if (CanManage)
+            {
+                <label>
+                    <span>Assigned User Id</span>
+                    <input @bind="filterAssignedToText" placeholder="Guid" />
+                </label>
+            }
+            <button type="button" @onclick="LoadTicketsAsync" disabled="@isBusy">Refresh Queue</button>
+        </section>
+    </section>
+
     <section class="panel">
-        <h2>Lifecycle</h2>
-        <p>New, Triaged, In Progress, Waiting Customer, Resolved, Closed.</p>
+        <h2>Ticket List (@tickets.Count)</h2>
+        @if (tickets.Count == 0)
+        {
+            <p>No tickets found for the current filter and role scope.</p>
+        }
+        else
+        {
+            <div class="ticket-list">
+                @foreach (TicketSummaryDto ticket in tickets)
+                {
+                    <button type="button" class="ticket-row @(selectedTicket?.Ticket.Id == ticket.Id ? "selected" : string.Empty)" @onclick="() => SelectTicketAsync(ticket.Id)">
+                        <span>@ticket.ReferenceCode</span>
+                        <span>@ticket.Subject</span>
+                        <span>@ticket.Status</span>
+                        <span>@ticket.Priority</span>
+                        <span>@ticket.Category</span>
+                    </button>
+                }
+            </div>
+        }
     </section>
-</div>
+
+    @if (selectedTicket is not null)
+    {
+        <section class="panel-grid">
+            <section class="panel">
+                <h2>Ticket Detail</h2>
+                <p><strong>@selectedTicket.Ticket.ReferenceCode</strong> - @selectedTicket.Ticket.Subject</p>
+                <p>Status: @selectedTicket.Ticket.Status | Priority: @selectedTicket.Ticket.Priority | Category: @selectedTicket.Ticket.Category</p>
+                <p>Assigned: @selectedTicket.Ticket.AssignedToUserId</p>
+
+                <h3>Conversation Timeline</h3>
+                <div class="timeline">
+                    @foreach (TicketMessageDto message in selectedTicket.Messages)
+                    {
+                        <article class="timeline-item">
+                            <header>@message.AuthorType | @message.Source | @message.CreatedUtc.ToLocalTime()</header>
+                            <p>@message.Body</p>
+                        </article>
+                    }
+                </div>
+
+                <label>
+                    <span>Post Reply</span>
+                    <textarea rows="3" @bind="newMessageBody"></textarea>
+                </label>
+                <button type="button" @onclick="AddMessageAsync" disabled="@isBusy">Send Message</button>
+
+                <label>
+                    <span>Attach File</span>
+                    <InputFile OnChange="OnDetailAttachmentChange" />
+                </label>
+
+                <h3>Attachments</h3>
+                @if (selectedTicket.Attachments.Count == 0)
+                {
+                    <p>No attachments.</p>
+                }
+                else
+                {
+                    <ul>
+                        @foreach (TicketAttachmentDto attachment in selectedTicket.Attachments)
+                        {
+                            <li>@attachment.FileName (@attachment.SizeBytes bytes)</li>
+                        }
+                    </ul>
+                }
+            </section>
+
+            @if (CanManage)
+            {
+                <section class="panel">
+                    <h2>Technician Actions</h2>
+                    <label>
+                        <span>Assign To User Id</span>
+                        <input @bind="assignToUserIdText" placeholder="Guid (empty to clear)" />
+                    </label>
+                    <button type="button" @onclick="AssignAsync" disabled="@isBusy">Apply Assignment</button>
+
+                    <label>
+                        <span>Set Status</span>
+                        <select @bind="manageStatus">
+                            @foreach (TicketStatus value in Enum.GetValues<TicketStatus>())
+                            {
+                                <option value="@value">@value</option>
+                            }
+                        </select>
+                    </label>
+                    <button type="button" @onclick="UpdateStatusAsync" disabled="@isBusy">Update Status</button>
+
+                    <label>
+                        <span>Triage Priority</span>
+                        <select @bind="managePriority">
+                            @foreach (TicketPriority value in Enum.GetValues<TicketPriority>())
+                            {
+                                <option value="@value">@value</option>
+                            }
+                        </select>
+                    </label>
+                    <label>
+                        <span>Triage Category</span>
+                        <input @bind="manageCategory" />
+                    </label>
+                    <button type="button" @onclick="UpdateTriageAsync" disabled="@isBusy">Update Triage</button>
+                </section>
+
+                <section class="panel">
+                    <h2>AI Agent</h2>
+                    <button type="button" @onclick="RunAiAsync" disabled="@isBusy">Run AI Triage</button>
+
+                    @if (selectedTicket.LatestAiSuggestion is not null)
+                    {
+                        <p>Status: @selectedTicket.LatestAiSuggestion.Status</p>
+                        <p>Confidence: @selectedTicket.LatestAiSuggestion.Confidence</p>
+                        <p>Risk: @selectedTicket.LatestAiSuggestion.RiskLevel</p>
+                        <p>Suggested Priority: @selectedTicket.LatestAiSuggestion.SuggestedPriority</p>
+                        <p>Suggested Category: @selectedTicket.LatestAiSuggestion.SuggestedCategory</p>
+                        <label>
+                            <span>Draft Response</span>
+                            <textarea rows="5" @bind="aiEditedResponse"></textarea>
+                        </label>
+
+                        @if (selectedTicket.LatestAiSuggestion.Status == AiSuggestionStatus.PendingApproval)
+                        {
+                            <button type="button" @onclick="ApproveAiAsync" disabled="@isBusy">Approve & Send</button>
+                            <button type="button" @onclick="DiscardAiAsync" disabled="@isBusy">Discard</button>
+                        }
+                    }
+                    else
+                    {
+                        <p>No AI suggestions yet.</p>
+                    }
+                </section>
+            }
+        </section>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <section class="panel"><p class="status">@statusMessage</p></section>
+    }
+}
+
+@code {
+    private readonly List<CustomerSummaryDto> adminCustomers = [];
+    private readonly List<TicketSummaryDto> tickets = [];
+
+    private TicketDetailDto? selectedTicket;
+    private bool isBusy;
+    private string statusMessage = string.Empty;
+
+    private string newTicketSubject = string.Empty;
+    private string newTicketDescription = string.Empty;
+    private TicketPriority newTicketPriority = TicketPriority.Medium;
+    private Guid? newTicketCustomerId;
+    private IReadOnlyList<IBrowserFile> createAttachments = [];
+
+    private string filterStatusText = string.Empty;
+    private string filterPriorityText = string.Empty;
+    private string filterCustomerIdText = string.Empty;
+    private string filterAssignedToText = string.Empty;
+
+    private string newMessageBody = string.Empty;
+    private string assignToUserIdText = string.Empty;
+    private TicketStatus manageStatus = TicketStatus.InProgress;
+    private TicketPriority managePriority = TicketPriority.Medium;
+    private string manageCategory = string.Empty;
+    private string aiEditedResponse = string.Empty;
+
+    private bool IsAdmin => Session.Role == "MspAdmin";
+    private bool IsEndUser => Session.Role == "EndUser";
+    private bool CanManage => Session.Role is "Technician" or "MspAdmin";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        if (Session.IsAuthenticated)
+        {
+            await EnsureAdminCustomersLoadedAsync();
+            await LoadTicketsAsync();
+        }
+    }
+
+    private void OnSessionChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (Session.IsAuthenticated)
+            {
+                await EnsureAdminCustomersLoadedAsync();
+                await LoadTicketsAsync();
+            }
+            else
+            {
+                adminCustomers.Clear();
+                newTicketCustomerId = null;
+                tickets.Clear();
+                selectedTicket = null;
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadTicketsAsync()
+    {
+        if (!Session.IsAuthenticated)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            TicketStatus? status = Enum.TryParse<TicketStatus>(filterStatusText, out TicketStatus parsedStatus) ? parsedStatus : null;
+            TicketPriority? priority = Enum.TryParse<TicketPriority>(filterPriorityText, out TicketPriority parsedPriority) ? parsedPriority : null;
+            Guid? customerId = ParseGuidNullable(filterCustomerIdText);
+            Guid? assignedTo = ParseGuidNullable(filterAssignedToText);
+
+            IReadOnlyList<TicketSummaryDto> loaded = await Api.ListTicketsAsync(new TicketFilterRequest(status, priority, customerId, assignedTo, 100));
+
+            tickets.Clear();
+            tickets.AddRange(loaded);
+
+            if (selectedTicket is not null && tickets.All(item => item.Id != selectedTicket.Ticket.Id))
+            {
+                selectedTicket = null;
+            }
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to load tickets: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SelectTicketAsync(Guid ticketId)
+    {
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            selectedTicket = await Api.GetTicketAsync(ticketId);
+            if (selectedTicket is not null && selectedTicket.LatestAiSuggestion is not null)
+            {
+                aiEditedResponse = selectedTicket.LatestAiSuggestion.DraftResponse;
+                managePriority = selectedTicket.Ticket.Priority;
+                manageStatus = selectedTicket.Ticket.Status;
+                manageCategory = selectedTicket.Ticket.Category ?? string.Empty;
+            }
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to load ticket detail: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task CreateTicketAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newTicketSubject) || string.IsNullOrWhiteSpace(newTicketDescription))
+        {
+            statusMessage = "Subject and description are required.";
+            return;
+        }
+
+        if (IsAdmin)
+        {
+            await EnsureAdminCustomersLoadedAsync();
+            if (!newTicketCustomerId.HasValue)
+            {
+                statusMessage = "Select a customer before creating an admin ticket.";
+                return;
+            }
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            Guid? customerId = IsAdmin ? newTicketCustomerId : null;
+            CreateTicketRequest request = new(customerId, newTicketSubject, newTicketDescription, newTicketPriority);
+            TicketSummaryDto created = await Api.CreateTicketAsync(request);
+
+            foreach (IBrowserFile file in createAttachments)
+            {
+                await using Stream stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+                await Api.UploadAttachmentAsync(created.Id, file.Name, file.ContentType, stream);
+            }
+
+            newTicketSubject = string.Empty;
+            newTicketDescription = string.Empty;
+            newTicketPriority = TicketPriority.Medium;
+            if (IsAdmin && !newTicketCustomerId.HasValue && adminCustomers.Count > 0)
+            {
+                newTicketCustomerId = adminCustomers[0].Id;
+            }
+            createAttachments = [];
+
+            await LoadTicketsAsync();
+            await SelectTicketAsync(created.Id);
+            statusMessage = $"Ticket {created.ReferenceCode} created.";
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to create ticket: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void OnCreateAttachmentChange(InputFileChangeEventArgs args)
+    {
+        createAttachments = args.GetMultipleFiles();
+    }
+
+    private async Task AddMessageAsync()
+    {
+        if (selectedTicket is null || string.IsNullOrWhiteSpace(newMessageBody))
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            await Api.AddMessageAsync(selectedTicket.Ticket.Id, new TicketMessageCreateRequest(newMessageBody));
+            newMessageBody = string.Empty;
+            await LoadTicketsAsync();
+            await SelectTicketAsync(selectedTicket.Ticket.Id);
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to post message: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task OnDetailAttachmentChange(InputFileChangeEventArgs args)
+    {
+        if (selectedTicket is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            foreach (IBrowserFile file in args.GetMultipleFiles())
+            {
+                await using Stream stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+                await Api.UploadAttachmentAsync(selectedTicket.Ticket.Id, file.Name, file.ContentType, stream);
+            }
+
+            await SelectTicketAsync(selectedTicket.Ticket.Id);
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Attachment upload failed: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task AssignAsync()
+    {
+        if (!CanManage || selectedTicket is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            Guid? assignedTo = ParseGuidNullable(assignToUserIdText);
+            await Api.AssignAsync(selectedTicket.Ticket.Id, new TicketAssignRequest(assignedTo));
+            await LoadTicketsAsync();
+            await SelectTicketAsync(selectedTicket.Ticket.Id);
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Assignment failed: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task UpdateStatusAsync()
+    {
+        if (!CanManage || selectedTicket is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            await Api.UpdateStatusAsync(selectedTicket.Ticket.Id, new TicketStatusUpdateRequest(manageStatus));
+            await LoadTicketsAsync();
+            await SelectTicketAsync(selectedTicket.Ticket.Id);
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Status update failed: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task UpdateTriageAsync()
+    {
+        if (!CanManage || selectedTicket is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            await Api.UpdateTriageAsync(selectedTicket.Ticket.Id, new TicketTriageUpdateRequest(managePriority, manageCategory));
+            await LoadTicketsAsync();
+            await SelectTicketAsync(selectedTicket.Ticket.Id);
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Triage update failed: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task RunAiAsync()
+    {
+        if (!CanManage || selectedTicket is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            await Api.RunAiAsync(selectedTicket.Ticket.Id);
+            await SelectTicketAsync(selectedTicket.Ticket.Id);
+            await LoadTicketsAsync();
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"AI run failed: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task ApproveAiAsync()
+    {
+        if (!CanManage || selectedTicket is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            await Api.ApproveAiAsync(selectedTicket.Ticket.Id, new TicketAiApprovalRequest(aiEditedResponse));
+            await SelectTicketAsync(selectedTicket.Ticket.Id);
+            await LoadTicketsAsync();
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"AI approval failed: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task DiscardAiAsync()
+    {
+        if (!CanManage || selectedTicket is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            await Api.DiscardAiAsync(selectedTicket.Ticket.Id);
+            await SelectTicketAsync(selectedTicket.Ticket.Id);
+            await LoadTicketsAsync();
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"AI discard failed: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static Guid? ParseGuidNullable(string raw)
+    {
+        if (Guid.TryParse(raw, out Guid parsed))
+        {
+            return parsed;
+        }
+
+        return null;
+    }
+
+    private async Task EnsureAdminCustomersLoadedAsync()
+    {
+        if (!IsAdmin)
+        {
+            adminCustomers.Clear();
+            newTicketCustomerId = null;
+            return;
+        }
+
+        if (adminCustomers.Count > 0)
+        {
+            return;
+        }
+
+        IReadOnlyList<CustomerSummaryDto> customers = await Api.ListCustomersAsync();
+        adminCustomers.Clear();
+        adminCustomers.AddRange(customers);
+
+        if (!newTicketCustomerId.HasValue && adminCustomers.Count > 0)
+        {
+            newTicketCustomerId = adminCustomers[0].Id;
+        }
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+    }
+}
