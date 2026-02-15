@@ -66,6 +66,8 @@ public sealed class OutboundEmailMessage
 
     public DateTime? SentUtc { get; private set; }
 
+    public DateTime? DeadLetteredUtc { get; private set; }
+
     public void MarkSent(DateTime utcNow)
     {
         Status = OutboundEmailStatus.Sent;
@@ -82,5 +84,25 @@ public sealed class OutboundEmailMessage
     public void MarkAttempt()
     {
         AttemptCount += 1;
+    }
+
+    public void MarkDeadLetter(string reason, DateTime utcNow)
+    {
+        LastError = reason;
+        Status = OutboundEmailStatus.DeadLetter;
+        DeadLetteredUtc = utcNow;
+    }
+
+    public void RetryFromDeadLetter()
+    {
+        if (Status != OutboundEmailStatus.DeadLetter)
+        {
+            throw new InvalidOperationException("Only dead-letter messages can be retried.");
+        }
+
+        Status = OutboundEmailStatus.Pending;
+        LastError = null;
+        DeadLetteredUtc = null;
+        AttemptCount = 0;
     }
 }

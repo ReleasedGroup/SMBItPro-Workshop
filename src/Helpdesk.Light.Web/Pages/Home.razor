@@ -1,26 +1,308 @@
 @page "/"
+@inject HelpdeskApiClient Api
+@inject ClientSession Session
+@implements IDisposable
 
 <PageTitle>Helpdesk-Light Dashboard</PageTitle>
 
-<section class="hero">
-    <h1>AI-enabled Helpdesk Operations</h1>
-    <p>Multi-customer MSP support with tenant boundaries, secure authentication, and Semantic Kernel-ready workflows.</p>
-</section>
+<h1>Operations Dashboard</h1>
+<p>Live KPIs for ticket operations, AI outcomes, and channel mix.</p>
 
-<section class="kpi-grid">
-    <article class="kpi-card">
-        <h2>Ticket Intake</h2>
-        <strong>Web + Email</strong>
-        <p>Dual-channel lodgement supports direct portal submissions and domain-mapped inbound email.</p>
-    </article>
-    <article class="kpi-card">
-        <h2>Tenant Safety</h2>
-        <strong>Strict isolation</strong>
-        <p>Role-aware access ensures technicians only access their assigned customer tenant.</p>
-    </article>
-    <article class="kpi-card">
-        <h2>Admin Control</h2>
-        <strong>Customer domains</strong>
-        <p>MSP admins create customers and configure domain mappings for automatic routing.</p>
-    </article>
-</section>
+@if (!Session.IsAuthenticated)
+{
+    <section class="panel">
+        <h2>Authentication Required</h2>
+        <p>Sign in to view tenant-scoped dashboard analytics.</p>
+        <a href="/login" class="button-link">Go to Login</a>
+    </section>
+}
+else
+{
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>Filters</h2>
+            @if (IsAdmin)
+            {
+                <label>
+                    <span>Customer</span>
+                    <InputSelect @bind-Value="selectedCustomerIdText">
+                        <option value="">All customers</option>
+                        @foreach (CustomerSummaryDto customer in customers)
+                        {
+                            <option value="@customer.Id.ToString()">@customer.Name</option>
+                        }
+                    </InputSelect>
+                </label>
+            }
+
+            <label>
+                <span>From (UTC date)</span>
+                <InputDate @bind-Value="fromDate" />
+            </label>
+            <label>
+                <span>To (UTC date)</span>
+                <InputDate @bind-Value="toDate" />
+            </label>
+
+            <button type="button" @onclick="LoadDashboardAsync" disabled="@isBusy">Refresh Dashboard</button>
+            <p class="hint">KPI definitions: <code>Helpdesk-Light/03-KPI-Definitions.md</code></p>
+        </section>
+
+        <section class="panel">
+            <h2>Date Window</h2>
+            @if (dashboard is null)
+            {
+                <p>No data loaded yet.</p>
+            }
+            else
+            {
+                <p><strong>From:</strong> @dashboard.RangeStartUtc.ToString("u")</p>
+                <p><strong>To:</strong> @dashboard.RangeEndUtc.ToString("u")</p>
+                <p><strong>Tenant Scope:</strong> @(selectedCustomerId.HasValue ? selectedCustomerId.Value.ToString() : "Current access scope")</p>
+            }
+        </section>
+    </section>
+
+    @if (dashboard is not null)
+    {
+        <section class="kpi-grid">
+            <article class="kpi-card">
+                <h2>Ticket Volume</h2>
+                <strong>@dashboard.TotalTicketVolume</strong>
+                <p>Tickets created in range</p>
+            </article>
+            <article class="kpi-card">
+                <h2>Open Tickets</h2>
+                <strong>@dashboard.OpenTicketCount</strong>
+                <p>Current open queue in range</p>
+            </article>
+            <article class="kpi-card">
+                <h2>First Response</h2>
+                <strong>@FormatMinutes(dashboard.AverageFirstResponseMinutes)</strong>
+                <p>Average time to first technician/agent response</p>
+            </article>
+            <article class="kpi-card">
+                <h2>Resolution Time</h2>
+                <strong>@FormatMinutes(dashboard.AverageResolutionMinutes)</strong>
+                <p>Average time from creation to resolution</p>
+            </article>
+            <article class="kpi-card">
+                <h2>AI Acceptance</h2>
+                <strong>@FormatRate(dashboard.SuggestionAcceptanceRate)</strong>
+                <p>@dashboard.AcceptedAiSuggestions of @dashboard.TotalAiSuggestions suggestions accepted</p>
+            </article>
+            <article class="kpi-card">
+                <h2>Auto Response</h2>
+                <strong>@FormatRate(dashboard.AutoResponseRate)</strong>
+                <p>@dashboard.AutoResponseCount automated responses sent</p>
+            </article>
+        </section>
+
+        <section class="panel-grid">
+            <section class="panel">
+                <h2>Open Tickets By Priority</h2>
+                <ul>
+                    @foreach (KeyValuePair<string, int> pair in dashboard.OpenTicketsByPriority.OrderBy(item => item.Key))
+                    {
+                        <li><strong>@pair.Key:</strong> @pair.Value</li>
+                    }
+                </ul>
+            </section>
+
+            <section class="panel">
+                <h2>Channel Split</h2>
+                <ul>
+                    @foreach (KeyValuePair<string, int> pair in dashboard.ChannelSplit.OrderBy(item => item.Key))
+                    {
+                        <li><strong>@pair.Key:</strong> @pair.Value</li>
+                    }
+                </ul>
+            </section>
+
+            <section class="panel">
+                <h2>AI Article Draft Acceptance</h2>
+                <p><strong>@FormatRate(dashboard.ArticleDraftAcceptanceRate)</strong></p>
+                <p>@dashboard.PublishedAiGeneratedArticleCount of @dashboard.AiGeneratedArticleCount AI-generated drafts were published.</p>
+            </section>
+        </section>
+
+        @if (IsAdmin && operationsMetrics is not null)
+        {
+            <section class="panel-grid">
+                <section class="panel">
+                    <h2>Runtime Metrics</h2>
+                    <p><strong>API Requests:</strong> @operationsMetrics.ApiRequestCount (errors: @operationsMetrics.ApiErrorCount)</p>
+                    <p><strong>Average API Latency:</strong> @operationsMetrics.AverageApiLatencyMs.ToString("N1") ms</p>
+                    <p><strong>Worker Queue Depth:</strong> @operationsMetrics.WorkerQueueDepth</p>
+                    <p><strong>Email Outcomes:</strong> Sent @operationsMetrics.EmailSentCount, Failed @operationsMetrics.EmailFailedCount, Dead-letter @operationsMetrics.EmailDeadLetterCount</p>
+                    <p><strong>AI Runtime:</strong> @operationsMetrics.AiRunCount runs, @operationsMetrics.AiRunFailureCount failures, avg @operationsMetrics.AverageAiDurationMs.ToString("N1") ms</p>
+                </section>
+
+                <section class="panel">
+                    <h2>Recent Worker Failures</h2>
+                    @if (operationsMetrics.RecentWorkerFailures.Count == 0)
+                    {
+                        <p>No worker failures recorded in current runtime.</p>
+                    }
+                    else
+                    {
+                        <ul>
+                            @foreach (WorkerFailureDto failure in operationsMetrics.RecentWorkerFailures.OrderByDescending(item => item.CreatedUtc).Take(10))
+                            {
+                                <li><strong>@failure.CreatedUtc.ToLocalTime()</strong> @failure.Worker: @failure.Error</li>
+                            }
+                        </ul>
+                    }
+                </section>
+            </section>
+        }
+    }
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <section class="panel">
+            <p class="status">@statusMessage</p>
+        </section>
+    }
+}
+
+@code {
+    private readonly List<CustomerSummaryDto> customers = [];
+
+    private AnalyticsDashboardDto? dashboard;
+    private OperationsMetricsDto? operationsMetrics;
+    private bool isBusy;
+    private string statusMessage = string.Empty;
+
+    private string selectedCustomerIdText = string.Empty;
+    private Guid? selectedCustomerId;
+
+    private DateTime? fromDate = DateTime.UtcNow.Date.AddDays(-30);
+    private DateTime? toDate = DateTime.UtcNow.Date;
+
+    private bool IsAdmin => Session.Role == "MspAdmin";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+
+        if (!Session.IsAuthenticated)
+        {
+            return;
+        }
+
+        await LoadCustomersIfNeededAsync();
+        await LoadDashboardAsync();
+    }
+
+    private void OnSessionChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (!Session.IsAuthenticated)
+            {
+                customers.Clear();
+                dashboard = null;
+                operationsMetrics = null;
+                statusMessage = string.Empty;
+                selectedCustomerIdText = string.Empty;
+                selectedCustomerId = null;
+                StateHasChanged();
+                return;
+            }
+
+            await LoadCustomersIfNeededAsync();
+            await LoadDashboardAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task LoadCustomersIfNeededAsync()
+    {
+        if (!IsAdmin)
+        {
+            customers.Clear();
+            selectedCustomerIdText = string.Empty;
+            selectedCustomerId = null;
+            return;
+        }
+
+        if (customers.Count > 0)
+        {
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<CustomerSummaryDto> loaded = await Api.ListCustomersAsync();
+            customers.Clear();
+            customers.AddRange(loaded.OrderBy(item => item.Name));
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to load customer filter list: {exception.Message}";
+        }
+    }
+
+    private async Task LoadDashboardAsync()
+    {
+        if (!Session.IsAuthenticated)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            selectedCustomerId = ParseGuidNullable(selectedCustomerIdText);
+            DateTime? fromUtc = fromDate.HasValue
+                ? DateTime.SpecifyKind(fromDate.Value.Date, DateTimeKind.Utc)
+                : null;
+
+            DateTime? toUtc = toDate.HasValue
+                ? DateTime.SpecifyKind(toDate.Value.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1)
+                : null;
+
+            if (fromUtc.HasValue && toUtc.HasValue && fromUtc > toUtc)
+            {
+                statusMessage = "From date must be on or before To date.";
+                return;
+            }
+
+            dashboard = await Api.GetDashboardAsync(new AnalyticsDashboardRequest(selectedCustomerId, fromUtc, toUtc));
+            operationsMetrics = IsAdmin
+                ? await Api.GetOperationsMetricsAsync()
+                : null;
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to load dashboard: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static Guid? ParseGuidNullable(string? raw)
+    {
+        return Guid.TryParse(raw, out Guid value) ? value : null;
+    }
+
+    private static string FormatMinutes(double? value)
+    {
+        return value.HasValue ? $"{value.Value:N1} min" : "N/A";
+    }
+
+    private static string FormatRate(double value)
+    {
+        return $"{value * 100:N1}%";
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+    }
+}

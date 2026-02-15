@@ -1,0 +1,7 @@
+.git
+.gitignore
+**/bin
+**/obj
+**/.DS_Store
+output
+backups

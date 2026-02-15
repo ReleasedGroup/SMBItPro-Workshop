@@ -22,6 +22,38 @@ public sealed class HelpdeskApiClient(HttpClient httpClient, ClientSession sessi
         return await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken);
     }
 
+    public async Task<AnalyticsDashboardDto> GetDashboardAsync(AnalyticsDashboardRequest request, CancellationToken cancellationToken = default)
+    {
+        string query =
+            $"customerId={request.CustomerId}" +
+            $"&fromUtc={FormatDate(request.FromUtc)}" +
+            $"&toUtc={FormatDate(request.ToUtc)}";
+
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Get, $"api/v1/analytics/dashboard?{query}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        return (await response.Content.ReadFromJsonAsync<AnalyticsDashboardDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<OperationsMetricsDto> GetOperationsMetricsAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Get, "api/v1/ops/metrics");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        return (await response.Content.ReadFromJsonAsync<OperationsMetricsDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<IReadOnlyList<DeadLetterMessageDto>> ListDeadLettersAsync(int take = 50, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Get, $"api/v1/ops/dead-letters?take={Math.Clamp(take, 1, 500)}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        return await response.Content.ReadFromJsonAsync<List<DeadLetterMessageDto>>(cancellationToken: cancellationToken) ?? [];
+    }
+
     public async Task<IReadOnlyList<TicketSummaryDto>> ListTicketsAsync(TicketFilterRequest request, CancellationToken cancellationToken = default)
     {
         string query = $"status={request.Status}&priority={request.Priority}&customerId={request.CustomerId}&assignedToUserId={request.AssignedToUserId}&take={request.Take}";
@@ -199,6 +231,78 @@ public sealed class HelpdeskApiClient(HttpClient httpClient, ClientSession sessi
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<KnowledgeArticleSummaryDto>> ListKnowledgeArticlesAsync(KnowledgeArticleListRequest request, CancellationToken cancellationToken = default)
+    {
+        string query =
+            $"search={Uri.EscapeDataString(request.Search ?? string.Empty)}" +
+            $"&status={request.Status}" +
+            $"&customerId={request.CustomerId}" +
+            $"&take={request.Take}";
+
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Get, $"api/v1/knowledge/articles?{query}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        return await response.Content.ReadFromJsonAsync<List<KnowledgeArticleSummaryDto>>(cancellationToken: cancellationToken) ?? [];
+    }
+
+    public async Task<KnowledgeArticleDetailDto?> GetKnowledgeArticleAsync(Guid articleId, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Get, $"api/v1/knowledge/articles/{articleId}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<KnowledgeArticleDetailDto>(cancellationToken: cancellationToken);
+    }
+
+    public async Task<KnowledgeArticleDetailDto> CreateKnowledgeDraftAsync(KnowledgeArticleDraftCreateRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Post, "api/v1/knowledge/articles");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<KnowledgeArticleDetailDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<KnowledgeArticleDetailDto> UpdateKnowledgeDraftAsync(Guid articleId, KnowledgeArticleDraftUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Put, $"api/v1/knowledge/articles/{articleId}");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<KnowledgeArticleDetailDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<KnowledgeArticleDetailDto> GenerateKnowledgeDraftFromTicketAsync(Guid ticketId, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Post, $"api/v1/knowledge/articles/from-ticket/{ticketId}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<KnowledgeArticleDetailDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<KnowledgeArticleDetailDto> PublishKnowledgeArticleAsync(Guid articleId, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Post, $"api/v1/knowledge/articles/{articleId}/publish");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<KnowledgeArticleDetailDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<KnowledgeArticleDetailDto> ArchiveKnowledgeArticleAsync(Guid articleId, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Post, $"api/v1/knowledge/articles/{articleId}/archive");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<KnowledgeArticleDetailDto>(cancellationToken: cancellationToken))!;
+    }
+
     private HttpRequestMessage CreateRequest(HttpMethod method, string uri)
     {
         HttpRequestMessage request = new(method, uri);
@@ -208,6 +312,13 @@ public sealed class HelpdeskApiClient(HttpClient httpClient, ClientSession sessi
         }
 
         return request;
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        return value.HasValue
+            ? Uri.EscapeDataString(value.Value.ToUniversalTime().ToString("O"))
+            : string.Empty;
     }
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)

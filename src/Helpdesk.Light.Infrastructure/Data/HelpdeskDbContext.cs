@@ -71,6 +71,10 @@ public sealed class HelpdeskDbContext(DbContextOptions<HelpdeskDbContext> option
             value => value.ToString(),
             value => Enum.Parse<AiPolicyMode>(value));
 
+        ValueConverter<KnowledgeArticleStatus, string> knowledgeArticleStatusConverter = new(
+            value => value.ToString(),
+            value => Enum.Parse<KnowledgeArticleStatus>(value));
+
         builder.Entity<Customer>(entity =>
         {
             entity.ToTable("Customers");
@@ -197,6 +201,7 @@ public sealed class HelpdeskDbContext(DbContextOptions<HelpdeskDbContext> option
             entity.Property(item => item.LastError).HasMaxLength(2000);
             entity.Property(item => item.CreatedUtc).IsRequired();
             entity.Property(item => item.SentUtc);
+            entity.Property(item => item.DeadLetteredUtc);
 
             entity.HasIndex(item => new { item.Status, item.CreatedUtc });
             entity.HasIndex(item => item.CorrelationKey);
@@ -248,10 +253,20 @@ public sealed class HelpdeskDbContext(DbContextOptions<HelpdeskDbContext> option
             entity.HasKey(item => item.Id);
             entity.Property(item => item.Title).HasMaxLength(300).IsRequired();
             entity.Property(item => item.ContentMarkdown).IsRequired();
-            entity.Property(item => item.Status).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Status).HasConversion(knowledgeArticleStatusConverter).HasMaxLength(40).IsRequired();
+            entity.Property(item => item.Version).IsRequired();
+            entity.Property(item => item.AiGenerated).IsRequired();
             entity.Property(item => item.CreatedUtc).IsRequired();
             entity.Property(item => item.UpdatedUtc).IsRequired();
-            entity.HasIndex(item => new { item.CustomerId, item.Status });
+            entity.Property(item => item.PublishedUtc);
+            entity.Property(item => item.ArchivedUtc);
+            entity.HasIndex(item => new { item.CustomerId, item.Status, item.UpdatedUtc });
+            entity.HasIndex(item => item.SourceTicketId);
+
+            entity.HasOne<Ticket>()
+                .WithMany()
+                .HasForeignKey(item => item.SourceTicketId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

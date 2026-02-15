@@ -1,0 +1,425 @@
+@page "/knowledge"
+@inject HelpdeskApiClient Api
+@inject ClientSession Session
+@implements IDisposable
+
+<PageTitle>Knowledge Base</PageTitle>
+
+<h1>Knowledge Base</h1>
+<p>Review, edit, and publish tenant-scoped support articles generated from resolved tickets.</p>
+
+@if (!Session.IsAuthenticated)
+{
+    <section class="panel">
+        <h2>Authentication Required</h2>
+        <p>Sign in to access knowledge workflows.</p>
+        <a href="/login" class="button-link">Go to Login</a>
+    </section>
+}
+else if (!CanManageKnowledge)
+{
+    <section class="panel">
+        <h2>Access Restricted</h2>
+        <p>Knowledge authoring is limited to technician and admin roles.</p>
+    </section>
+}
+else
+{
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>Generate Draft</h2>
+            <label>
+                <span>Resolved Ticket Id</span>
+                <input @bind="generateTicketIdText" placeholder="Guid" />
+            </label>
+            <button type="button" @onclick="GenerateFromTicketAsync" disabled="@isBusy">Generate from Ticket</button>
+        </section>
+
+        <section class="panel">
+            <h2>Filter Articles</h2>
+            <label>
+                <span>Status</span>
+                <select @bind="filterStatusText">
+                    <option value="">Any</option>
+                    @foreach (KnowledgeArticleStatus status in Enum.GetValues<KnowledgeArticleStatus>())
+                    {
+                        <option value="@status">@status</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <span>Search</span>
+                <input @bind="searchText" placeholder="Title or content" />
+            </label>
+            @if (IsAdmin)
+            {
+                <label>
+                    <span>Customer</span>
+                    <InputSelect @bind-Value="filterCustomerId">
+                        <option value="">All customers</option>
+                        @foreach (AdminCustomerOption customer in adminCustomers)
+                        {
+                            <option value="@customer.Id">@customer.Name (@customer.Id)</option>
+                        }
+                    </InputSelect>
+                </label>
+            }
+            <button type="button" @onclick="LoadArticlesAsync" disabled="@isBusy">Refresh</button>
+        </section>
+    </section>
+
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>Article List (@articles.Count)</h2>
+            @if (articles.Count == 0)
+            {
+                <p>No articles matched the filter.</p>
+            }
+            else
+            {
+                <div class="ticket-list">
+                    @foreach (KnowledgeArticleSummaryDto article in articles)
+                    {
+                        <button type="button" class="ticket-row @(selectedArticle?.Id == article.Id ? "selected" : string.Empty)" @onclick="() => SelectArticleAsync(article.Id)">
+                            <span>@article.Status</span>
+                            <span>@article.Title</span>
+                            <span>v@article.Version</span>
+                            <span>@(article.AiGenerated ? "AI Draft" : "Manual")</span>
+                            <span>@article.UpdatedUtc.ToLocalTime()</span>
+                        </button>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <h2>@(selectedArticle is null ? "Create Draft" : "Edit Draft")</h2>
+            <label>
+                <span>Title</span>
+                <input @bind="editTitle" />
+            </label>
+            <label>
+                <span>Content (Markdown)</span>
+                <textarea rows="12" @bind="editContent"></textarea>
+            </label>
+            @if (IsAdmin && selectedArticle is null)
+            {
+                <label>
+                    <span>Customer</span>
+                    <InputSelect @bind-Value="newArticleCustomerId">
+                        @if (adminCustomers.Count == 0)
+                        {
+                            <option value="">No customers</option>
+                        }
+                        else
+                        {
+                            @foreach (AdminCustomerOption customer in adminCustomers)
+                            {
+                                <option value="@customer.Id">@customer.Name (@customer.Id)</option>
+                            }
+                        }
+                    </InputSelect>
+                </label>
+            }
+
+            @if (selectedArticle is null)
+            {
+                <button type="button" @onclick="CreateDraftAsync" disabled="@isBusy">Create Draft</button>
+            }
+            else
+            {
+                <p>Status: <strong>@selectedArticle.Status</strong> | Version: <strong>@selectedArticle.Version</strong></p>
+                <button type="button" @onclick="SaveDraftAsync" disabled="@isBusy || selectedArticle.Status != KnowledgeArticleStatus.Draft">Save Draft</button>
+                <button type="button" @onclick="PublishAsync" disabled="@isBusy || selectedArticle.Status != KnowledgeArticleStatus.Draft">Publish</button>
+                <button type="button" @onclick="ArchiveAsync" disabled="@isBusy || selectedArticle.Status != KnowledgeArticleStatus.Published">Archive</button>
+            }
+        </section>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <section class="panel"><p class="status">@statusMessage</p></section>
+    }
+}
+
+@code {
+    private sealed record AdminCustomerOption(Guid Id, string Name, bool IsActive, int DomainCount);
+
+    private readonly List<AdminCustomerOption> adminCustomers = [];
+    private readonly List<KnowledgeArticleSummaryDto> articles = [];
+
+    private KnowledgeArticleDetailDto? selectedArticle;
+    private bool isBusy;
+    private string statusMessage = string.Empty;
+    private string filterStatusText = string.Empty;
+    private string searchText = string.Empty;
+    private Guid? filterCustomerId;
+    private Guid? newArticleCustomerId;
+    private string generateTicketIdText = string.Empty;
+    private string editTitle = string.Empty;
+    private string editContent = string.Empty;
+
+    private bool IsAdmin => Session.Role == "MspAdmin";
+    private bool CanManageKnowledge => Session.Role is "Technician" or "MspAdmin";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Changed += OnSessionChanged;
+        if (Session.IsAuthenticated && CanManageKnowledge)
+        {
+            await EnsureAdminCustomersLoadedAsync();
+            await LoadArticlesAsync();
+        }
+    }
+
+    private void OnSessionChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            selectedArticle = null;
+            statusMessage = string.Empty;
+            articles.Clear();
+            adminCustomers.Clear();
+
+            if (Session.IsAuthenticated && CanManageKnowledge)
+            {
+                await EnsureAdminCustomersLoadedAsync();
+                await LoadArticlesAsync();
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task EnsureAdminCustomersLoadedAsync()
+    {
+        if (!IsAdmin)
+        {
+            return;
+        }
+
+        IReadOnlyList<Helpdesk.Light.Application.Contracts.CustomerSummaryDto> customers = await Api.ListCustomersAsync();
+
+        adminCustomers.Clear();
+        adminCustomers.AddRange(customers.Select(item => new AdminCustomerOption(item.Id, item.Name, item.IsActive, item.DomainCount)));
+
+        if (!newArticleCustomerId.HasValue && adminCustomers.Count > 0)
+        {
+            newArticleCustomerId = adminCustomers[0].Id;
+        }
+    }
+
+    private async Task LoadArticlesAsync()
+    {
+        if (!CanManageKnowledge)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            KnowledgeArticleStatus? status = Enum.TryParse<KnowledgeArticleStatus>(filterStatusText, out KnowledgeArticleStatus parsed)
+                ? parsed
+                : null;
+
+            Guid? customerId = IsAdmin ? filterCustomerId : null;
+            IReadOnlyList<KnowledgeArticleSummaryDto> loaded = await Api.ListKnowledgeArticlesAsync(
+                new KnowledgeArticleListRequest(searchText, status, customerId, 200));
+
+            articles.Clear();
+            articles.AddRange(loaded);
+            if (selectedArticle is not null && articles.All(item => item.Id != selectedArticle.Id))
+            {
+                selectedArticle = null;
+            }
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to load knowledge articles: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SelectArticleAsync(Guid articleId)
+    {
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            selectedArticle = await Api.GetKnowledgeArticleAsync(articleId);
+            if (selectedArticle is not null)
+            {
+                editTitle = selectedArticle.Title;
+                editContent = selectedArticle.ContentMarkdown;
+            }
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to load article: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task CreateDraftAsync()
+    {
+        if (string.IsNullOrWhiteSpace(editTitle) || string.IsNullOrWhiteSpace(editContent))
+        {
+            statusMessage = "Title and content are required.";
+            return;
+        }
+
+        if (IsAdmin && !newArticleCustomerId.HasValue)
+        {
+            statusMessage = "Select a customer before creating an admin article.";
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            KnowledgeArticleDetailDto created = await Api.CreateKnowledgeDraftAsync(
+                new KnowledgeArticleDraftCreateRequest(
+                    IsAdmin ? newArticleCustomerId : null,
+                    null,
+                    editTitle,
+                    editContent,
+                    AiGenerated: false));
+
+            selectedArticle = created;
+            await LoadArticlesAsync();
+            statusMessage = $"Draft article created: {created.Title}.";
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to create draft: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        if (selectedArticle is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            selectedArticle = await Api.UpdateKnowledgeDraftAsync(selectedArticle.Id, new KnowledgeArticleDraftUpdateRequest(editTitle, editContent));
+            await LoadArticlesAsync();
+            statusMessage = "Draft saved.";
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to save draft: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task PublishAsync()
+    {
+        if (selectedArticle is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            selectedArticle = await Api.PublishKnowledgeArticleAsync(selectedArticle.Id);
+            await LoadArticlesAsync();
+            statusMessage = "Article published.";
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to publish article: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task ArchiveAsync()
+    {
+        if (selectedArticle is null)
+        {
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            selectedArticle = await Api.ArchiveKnowledgeArticleAsync(selectedArticle.Id);
+            await LoadArticlesAsync();
+            statusMessage = "Article archived.";
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to archive article: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task GenerateFromTicketAsync()
+    {
+        if (!Guid.TryParse(generateTicketIdText, out Guid ticketId))
+        {
+            statusMessage = "Provide a valid resolved ticket id.";
+            return;
+        }
+
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            selectedArticle = await Api.GenerateKnowledgeDraftFromTicketAsync(ticketId);
+            editTitle = selectedArticle.Title;
+            editContent = selectedArticle.ContentMarkdown;
+            await LoadArticlesAsync();
+            statusMessage = $"AI draft generated from ticket {ticketId}.";
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to generate draft: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Session.Changed -= OnSessionChanged;
+    }
+}

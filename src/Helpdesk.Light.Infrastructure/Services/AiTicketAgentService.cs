@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Helpdesk.Light.Application.Abstractions;
@@ -32,6 +33,7 @@ public sealed class AiTicketAgentService : IAiTicketAgentService
     private readonly ITenantContextAccessor tenantContextAccessor;
     private readonly ITicketAccessGuard ticketAccessGuard;
     private readonly IOutboundEmailService outboundEmailService;
+    private readonly IRuntimeMetricsRecorder runtimeMetrics;
     private readonly AiOptions aiOptions;
     private readonly ILogger<AiTicketAgentService> logger;
     private readonly Kernel? kernel;
@@ -41,6 +43,7 @@ public sealed class AiTicketAgentService : IAiTicketAgentService
         ITenantContextAccessor tenantContextAccessor,
         ITicketAccessGuard ticketAccessGuard,
         IOutboundEmailService outboundEmailService,
+        IRuntimeMetricsRecorder runtimeMetrics,
         IOptions<AiOptions> options,
         ILogger<AiTicketAgentService> logger)
     {
@@ -48,6 +51,7 @@ public sealed class AiTicketAgentService : IAiTicketAgentService
         this.tenantContextAccessor = tenantContextAccessor;
         this.ticketAccessGuard = ticketAccessGuard;
         this.outboundEmailService = outboundEmailService;
+        this.runtimeMetrics = runtimeMetrics;
         this.aiOptions = options.Value;
         this.logger = logger;
         kernel = BuildKernel(aiOptions);
@@ -55,118 +59,130 @@ public sealed class AiTicketAgentService : IAiTicketAgentService
 
     public async Task<AiRunResult> RunForTicketAsync(AiRunRequest request, CancellationToken cancellationToken = default)
     {
-        Ticket ticket = await dbContext.Tickets.SingleOrDefaultAsync(item => item.Id == request.TicketId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Ticket '{request.TicketId}' was not found.");
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        bool success = false;
 
-        var customer = await dbContext.Customers.SingleAsync(item => item.Id == ticket.CustomerId, cancellationToken);
-        List<TicketMessage> messages = await dbContext.TicketMessages
-            .Where(item => item.TicketId == ticket.Id)
-            .OrderByDescending(item => item.CreatedUtc)
-            .Take(12)
-            .ToListAsync(cancellationToken);
-
-        List<KnowledgeArticle> articles = await dbContext.KnowledgeArticles
-            .AsNoTracking()
-            .Where(item => item.Status == "Published" && (item.CustomerId == null || item.CustomerId == ticket.CustomerId))
-            .OrderByDescending(item => item.UpdatedUtc)
-            .Take(3)
-            .ToListAsync(cancellationToken);
-
-        DateTime utcNow = DateTime.UtcNow;
-        AiGeneration generated = await GenerateSuggestionAsync(ticket, messages, articles, cancellationToken);
-
-        string mode = customer.AiPolicyMode.ToString();
-        AiRun run = new(
-            Guid.NewGuid(),
-            ticket.Id,
-            aiOptions.ModelId,
-            mode,
-            generated.PromptHash,
-            generated.InputTokens,
-            generated.OutputTokens,
-            generated.Confidence,
-            "Completed",
-            utcNow);
-
-        dbContext.AiRuns.Add(run);
-
-        TicketAiSuggestion suggestion = new(
-            Guid.NewGuid(),
-            ticket.Id,
-            generated.DraftResponse,
-            generated.SuggestedCategory,
-            generated.SuggestedPriority,
-            generated.RiskLevel,
-            generated.Confidence,
-            AiSuggestionStatus.PendingApproval,
-            utcNow);
-
-        dbContext.TicketAiSuggestions.Add(suggestion);
-
-        if (Enum.TryParse(generated.SuggestedPriority, true, out TicketPriority suggestedPriority))
+        try
         {
-            ticket.SetPriority(suggestedPriority, utcNow);
-        }
+            Ticket ticket = await dbContext.Tickets.SingleOrDefaultAsync(item => item.Id == request.TicketId, cancellationToken)
+                ?? throw new KeyNotFoundException($"Ticket '{request.TicketId}' was not found.");
 
-        ticket.SetCategory(generated.SuggestedCategory, utcNow);
+            var customer = await dbContext.Customers.SingleAsync(item => item.Id == ticket.CustomerId, cancellationToken);
+            List<TicketMessage> messages = await dbContext.TicketMessages
+                .Where(item => item.TicketId == ticket.Id)
+                .OrderByDescending(item => item.CreatedUtc)
+                .Take(12)
+                .ToListAsync(cancellationToken);
 
-        bool autoResponseSent = false;
-        bool lowRisk = generated.RiskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase);
-        bool aboveThreshold = generated.Confidence >= customer.AutoRespondMinConfidence;
-        bool restrictedCategory = RestrictedCategories.Contains(generated.SuggestedCategory);
+            List<KnowledgeArticle> articles = await dbContext.KnowledgeArticles
+                .AsNoTracking()
+                .Where(item => item.Status == KnowledgeArticleStatus.Published && (item.CustomerId == null || item.CustomerId == ticket.CustomerId))
+                .OrderByDescending(item => item.UpdatedUtc)
+                .Take(3)
+                .ToListAsync(cancellationToken);
 
-        if (customer.AiPolicyMode == AiPolicyMode.AutoRespondLowRisk && lowRisk && aboveThreshold && !restrictedCategory)
-        {
-            suggestion.SetStatus(AiSuggestionStatus.AutoSent, null, utcNow);
+            DateTime utcNow = DateTime.UtcNow;
+            AiGeneration generated = await GenerateSuggestionAsync(ticket, messages, articles, cancellationToken);
 
-            TicketMessage aiMessage = new(
+            string mode = customer.AiPolicyMode.ToString();
+            AiRun run = new(
                 Guid.NewGuid(),
                 ticket.Id,
-                TicketAuthorType.Agent,
-                null,
-                suggestion.DraftResponse,
-                TicketMessageSource.Ai,
-                null,
+                aiOptions.ModelId,
+                mode,
+                generated.PromptHash,
+                generated.InputTokens,
+                generated.OutputTokens,
+                generated.Confidence,
+                "Completed",
                 utcNow);
 
-            dbContext.TicketMessages.Add(aiMessage);
-            autoResponseSent = true;
+            dbContext.AiRuns.Add(run);
 
-            string? recipient = await dbContext.Users
-                .Where(item => item.Id == ticket.CreatedByUserId)
-                .Select(item => item.Email)
-                .SingleOrDefaultAsync(cancellationToken);
+            TicketAiSuggestion suggestion = new(
+                Guid.NewGuid(),
+                ticket.Id,
+                generated.DraftResponse,
+                generated.SuggestedCategory,
+                generated.SuggestedPriority,
+                generated.RiskLevel,
+                generated.Confidence,
+                AiSuggestionStatus.PendingApproval,
+                utcNow);
 
-            if (!string.IsNullOrWhiteSpace(recipient))
+            dbContext.TicketAiSuggestions.Add(suggestion);
+
+            if (Enum.TryParse(generated.SuggestedPriority, true, out TicketPriority suggestedPriority))
             {
-                await outboundEmailService.QueueAsync(
-                    ticket.CustomerId,
-                    ticket.Id,
-                    recipient,
-                    $"[{ticket.ReferenceCode}] AI response",
-                    suggestion.DraftResponse,
-                    $"ai-auto-response:{ticket.Id}:{suggestion.Id}",
-                    cancellationToken);
+                ticket.SetPriority(suggestedPriority, utcNow);
             }
 
-            AddAudit(ticket.CustomerId, null, "ai.auto_response.sent", new { ticketId = ticket.Id, suggestionId = suggestion.Id, generated.Confidence });
+            ticket.SetCategory(generated.SuggestedCategory, utcNow);
+
+            bool autoResponseSent = false;
+            bool lowRisk = generated.RiskLevel.Equals("Low", StringComparison.OrdinalIgnoreCase);
+            bool aboveThreshold = generated.Confidence >= customer.AutoRespondMinConfidence;
+            bool restrictedCategory = RestrictedCategories.Contains(generated.SuggestedCategory);
+
+            if (customer.AiPolicyMode == AiPolicyMode.AutoRespondLowRisk && lowRisk && aboveThreshold && !restrictedCategory)
+            {
+                suggestion.SetStatus(AiSuggestionStatus.AutoSent, null, utcNow);
+
+                TicketMessage aiMessage = new(
+                    Guid.NewGuid(),
+                    ticket.Id,
+                    TicketAuthorType.Agent,
+                    null,
+                    suggestion.DraftResponse,
+                    TicketMessageSource.Ai,
+                    null,
+                    utcNow);
+
+                dbContext.TicketMessages.Add(aiMessage);
+                autoResponseSent = true;
+
+                string? recipient = await dbContext.Users
+                    .Where(item => item.Id == ticket.CreatedByUserId)
+                    .Select(item => item.Email)
+                    .SingleOrDefaultAsync(cancellationToken);
+
+                if (!string.IsNullOrWhiteSpace(recipient))
+                {
+                    await outboundEmailService.QueueAsync(
+                        ticket.CustomerId,
+                        ticket.Id,
+                        recipient,
+                        $"[{ticket.ReferenceCode}] AI response",
+                        suggestion.DraftResponse,
+                        $"ai-auto-response:{ticket.Id}:{suggestion.Id}",
+                        cancellationToken);
+                }
+
+                AddAudit(ticket.CustomerId, null, "ai.auto_response.sent", new { ticketId = ticket.Id, suggestionId = suggestion.Id, generated.Confidence });
+            }
+            else
+            {
+                AddAudit(ticket.CustomerId, null, "ai.suggestion.created", new { ticketId = ticket.Id, suggestionId = suggestion.Id, generated.Confidence });
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            success = true;
+            return new AiRunResult(
+                ticket.Id,
+                suggestion.SuggestedCategory,
+                suggestion.SuggestedPriority,
+                suggestion.DraftResponse,
+                suggestion.RiskLevel,
+                suggestion.Confidence,
+                suggestion.Status,
+                autoResponseSent);
         }
-        else
+        finally
         {
-            AddAudit(ticket.CustomerId, null, "ai.suggestion.created", new { ticketId = ticket.Id, suggestionId = suggestion.Id, generated.Confidence });
+            stopwatch.Stop();
+            runtimeMetrics.RecordAiRun(stopwatch.Elapsed.TotalMilliseconds, success);
         }
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        return new AiRunResult(
-            ticket.Id,
-            suggestion.SuggestedCategory,
-            suggestion.SuggestedPriority,
-            suggestion.DraftResponse,
-            suggestion.RiskLevel,
-            suggestion.Confidence,
-            suggestion.Status,
-            autoResponseSent);
     }
 
     public async Task<AiRunResult?> ApproveSuggestionAsync(Guid ticketId, TicketAiApprovalRequest request, CancellationToken cancellationToken = default)

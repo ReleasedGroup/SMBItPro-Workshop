@@ -53,17 +53,26 @@ public static class SeedData
                 new Domain.Ai.KnowledgeArticle(
                     Guid.Parse("01af40de-97f7-44a8-848e-84186f6f2f5d"),
                     null,
+                    null,
                     "Password Reset Basics",
                     "Validate identity before resetting credentials. Enforce MFA reset checks.",
-                    "Published",
+                    aiGenerated: false,
+                    editedByUserId: null,
                     DateTime.UtcNow),
                 new Domain.Ai.KnowledgeArticle(
                     Guid.Parse("3d22ec72-c57e-4fbc-8135-7d8fd6b4be45"),
                     null,
+                    null,
                     "Service Outage Triage",
                     "Confirm scope, impacted services, and rollback path. Provide 30 minute status updates.",
-                    "Published",
+                    aiGenerated: false,
+                    editedByUserId: null,
                     DateTime.UtcNow));
+
+            foreach (Domain.Ai.KnowledgeArticle article in dbContext.KnowledgeArticles.Local.ToList())
+            {
+                article.Publish(null, DateTime.UtcNow);
+            }
 
             await dbContext.SaveChangesAsync(cancellationToken);
         }

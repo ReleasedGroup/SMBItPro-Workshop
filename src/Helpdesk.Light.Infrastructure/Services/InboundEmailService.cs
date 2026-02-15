@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Helpdesk.Light.Application.Abstractions.Ai;
 using Helpdesk.Light.Application.Abstractions.Email;
@@ -74,6 +75,11 @@ public sealed class InboundEmailService(
             }
 
             await SaveInboundAttachmentsAsync(existingTicket.Id, senderUser.Id, request.Attachments, cancellationToken);
+            AddAuditEvent(
+                customerId,
+                senderUser.Id,
+                "ticket.email.reply.ingested",
+                new { ticketId = existingTicket.Id, messageId = request.MessageId, sender = request.SenderEmail });
             await dbContext.SaveChangesAsync(cancellationToken);
 
             await aiTicketAgentService.RunForTicketAsync(new AiRunRequest(existingTicket.Id, "InboundEmailReply"), cancellationToken);
@@ -104,6 +110,11 @@ public sealed class InboundEmailService(
             receivedUtc);
 
         dbContext.TicketMessages.Add(initialMessage);
+        AddAuditEvent(
+            customerId,
+            senderUser.Id,
+            "ticket.email.created",
+            new { ticketId = ticket.Id, messageId = request.MessageId, sender = request.SenderEmail });
 
         await SaveInboundAttachmentsAsync(ticket.Id, senderUser.Id, request.Attachments, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -197,5 +208,16 @@ public sealed class InboundEmailService(
 
         string withoutTags = Regex.Replace(request.HtmlBody, "<.*?>", " ");
         return Regex.Replace(withoutTags, "\\s+", " ").Trim();
+    }
+
+    private void AddAuditEvent(Guid customerId, Guid? actorUserId, string eventType, object payload)
+    {
+        dbContext.AuditEvents.Add(new AuditEvent(
+            Guid.NewGuid(),
+            customerId,
+            actorUserId,
+            eventType,
+            JsonSerializer.Serialize(payload),
+            DateTime.UtcNow));
     }
 }

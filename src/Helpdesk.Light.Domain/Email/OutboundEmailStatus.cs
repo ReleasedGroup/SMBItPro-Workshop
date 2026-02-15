@@ -4,5 +4,6 @@ public enum OutboundEmailStatus
 {
     Pending,
     Sent,
-    Failed
+    Failed,
+    DeadLetter
 }

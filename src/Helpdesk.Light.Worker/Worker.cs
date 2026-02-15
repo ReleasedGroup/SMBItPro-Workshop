@@ -1,3 +1,4 @@
+using Helpdesk.Light.Application.Abstractions;
 using Helpdesk.Light.Application.Abstractions.Email;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -5,6 +6,7 @@ namespace Helpdesk.Light.Worker;
 
 public sealed class Worker(
     ILogger<Worker> logger,
+    IRuntimeMetricsRecorder runtimeMetrics,
     IServiceScopeFactory scopeFactory) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -20,6 +22,7 @@ public sealed class Worker(
             catch (Exception exception)
             {
                 logger.LogError(exception, "Outbound dispatch cycle failed.");
+                runtimeMetrics.RecordWorkerFailure(nameof(Worker), exception.Message);
             }
 
             try
