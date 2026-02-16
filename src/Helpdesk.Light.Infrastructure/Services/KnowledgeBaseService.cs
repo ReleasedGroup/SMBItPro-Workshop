@@ -54,10 +54,11 @@ public sealed class KnowledgeBaseService : IKnowledgeBaseService
 
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
-            string search = request.Search.Trim();
+            string search = EscapeLikePattern(request.Search.Trim());
+            string pattern = $"%{search}%";
             query = query.Where(item =>
-                EF.Functions.Like(item.Title, $"%{search}%") ||
-                EF.Functions.Like(item.ContentMarkdown, $"%{search}%"));
+                EF.Functions.Like(item.Title, pattern, "\\") ||
+                EF.Functions.Like(item.ContentMarkdown, pattern, "\\"));
         }
 
         int take = Math.Clamp(request.Take, 1, 300);
@@ -335,6 +336,15 @@ public sealed class KnowledgeBaseService : IKnowledgeBaseService
                 ## Prevention
                 - Capture recurring indicators and update monitoring thresholds for early detection.
                 """;
+    }
+
+    private static string EscapeLikePattern(string value)
+    {
+        return value
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal)
+            .Replace("[", "\\[", StringComparison.Ordinal);
     }
 
     private static KnowledgeArticleSummaryDto ToSummary(KnowledgeArticle article)

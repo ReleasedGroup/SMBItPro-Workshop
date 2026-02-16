@@ -1,0 +1,182 @@
+name: CD Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Tag to publish (example: v1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cd-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  package-runtime:
+    name: Package ${{ matrix.component }} (${{ matrix.rid }})
+    if: ${{ github.event_name != 'release' || github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - api
+          - worker
+        rid:
+          - linux-x64
+          - linux-arm64
+          - win-x64
+          - osx-x64
+          - osx-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.103
+
+      - name: Restore
+        run: dotnet restore Helpdesk.Light.slnx
+
+      - name: Publish package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "${{ matrix.component }}" in
+            api)
+              CSPROJ="src/Helpdesk.Light.Api/Helpdesk.Light.Api.csproj"
+              ;;
+            worker)
+              CSPROJ="src/Helpdesk.Light.Worker/Helpdesk.Light.Worker.csproj"
+              ;;
+            *)
+              echo "Unknown component: ${{ matrix.component }}"
+              exit 1
+              ;;
+          esac
+
+          OUT_DIR="artifacts/publish/${{ matrix.component }}-${{ matrix.rid }}"
+          ASSET_PATH="artifacts/release/helpdesk-light-${{ matrix.component }}-${{ matrix.rid }}.tar.gz"
+          mkdir -p artifacts/release
+
+          dotnet publish "$CSPROJ" \
+            --configuration Release \
+            --runtime "${{ matrix.rid }}" \
+            --self-contained true \
+            -p:PublishSingleFile=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:PublishTrimmed=false \
+            -p:DebugType=None \
+            -p:DebugSymbols=false \
+            --output "$OUT_DIR"
+
+          tar -C "$OUT_DIR" -czf "$ASSET_PATH" .
+
+      - name: Upload packaged runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.component }}-${{ matrix.rid }}
+          path: artifacts/release/*.tar.gz
+          if-no-files-found: error
+
+  package-web:
+    name: Package web (static)
+    if: ${{ github.event_name != 'release' || github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.103
+
+      - name: Restore
+        run: dotnet restore src/Helpdesk.Light.Web/Helpdesk.Light.Web.csproj
+
+      - name: Publish web app
+        run: dotnet publish src/Helpdesk.Light.Web/Helpdesk.Light.Web.csproj --configuration Release --no-restore --output artifacts/publish/web
+
+      - name: Create web static package
+        run: |
+          mkdir -p artifacts/release
+          tar -C artifacts/publish/web/wwwroot -czf artifacts/release/helpdesk-light-web-static.tar.gz .
+
+      - name: Upload packaged web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-web-static
+          path: artifacts/release/helpdesk-light-web-static.tar.gz
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish release assets
+    if: ${{ github.event_name != 'release' || github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - package-runtime
+      - package-web
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS.txt
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG="${{ github.event.release.tag_name }}"
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.release_tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          echo "value=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Create/update release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.value }}
+          generate_release_notes: true
+          overwrite_files: true
+          files: |
+            dist/*.tar.gz
+            dist/SHA256SUMS.txt
