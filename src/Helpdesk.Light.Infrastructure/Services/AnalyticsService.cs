@@ -39,18 +39,23 @@ public sealed class AnalyticsService(
         IQueryable<Ticket> rangedTickets = allTickets
             .Where(item => item.CreatedUtc >= rangeStartUtc && item.CreatedUtc <= rangeEndUtc);
 
-        int totalTicketVolume = await rangedTickets.CountAsync(cancellationToken);
-        int openTicketCount = await rangedTickets.CountAsync(
-            item => item.Status != TicketStatus.Resolved && item.Status != TicketStatus.Closed,
-            cancellationToken);
-
-        List<Ticket> openTickets = await rangedTickets
-            .Where(item => item.Status != TicketStatus.Resolved && item.Status != TicketStatus.Closed)
+        List<TicketProjection> rangedTicketList = await rangedTickets
+            .Select(item => new TicketProjection(
+                item.Id,
+                item.CreatedUtc,
+                item.Status,
+                item.Priority,
+                item.Channel))
             .ToListAsync(cancellationToken);
+
+        int totalTicketVolume = rangedTicketList.Count;
+        int openTicketCount = rangedTicketList.Count(
+            item => item.Status != TicketStatus.Resolved && item.Status != TicketStatus.Closed);
 
         Dictionary<string, int> openByPriority = Enum.GetValues<TicketPriority>()
             .ToDictionary(value => value.ToString(), value => 0);
-        foreach (Ticket ticket in openTickets)
+        foreach (TicketProjection ticket in rangedTicketList.Where(item =>
+                     item.Status != TicketStatus.Resolved && item.Status != TicketStatus.Closed))
         {
             string key = ticket.Priority.ToString();
             openByPriority[key] = openByPriority.GetValueOrDefault(key) + 1;
@@ -58,24 +63,34 @@ public sealed class AnalyticsService(
 
         Dictionary<string, int> channelSplit = Enum.GetValues<TicketChannel>()
             .ToDictionary(value => value.ToString(), value => 0);
-        List<Ticket> rangedTicketList = await rangedTickets.ToListAsync(cancellationToken);
-        foreach (Ticket ticket in rangedTicketList)
+        foreach (TicketProjection ticket in rangedTicketList)
         {
             string key = ticket.Channel.ToString();
             channelSplit[key] = channelSplit.GetValueOrDefault(key) + 1;
         }
 
-        List<FirstResponseProjection> firstResponses = await rangedTickets
-            .Select(ticket => new FirstResponseProjection(
-                ticket.CreatedUtc,
-                dbContext.TicketMessages
-                    .Where(message => message.TicketId == ticket.Id &&
-                                      (message.AuthorType == TicketAuthorType.Technician ||
-                                       message.AuthorType == TicketAuthorType.Agent))
-                    .OrderBy(message => message.CreatedUtc)
-                    .Select(message => (DateTime?)message.CreatedUtc)
-                    .FirstOrDefault()))
-            .ToListAsync(cancellationToken);
+        Guid[] rangedTicketIds = rangedTicketList.Select(item => item.Id).ToArray();
+        Dictionary<Guid, DateTime> firstResponseByTicket = rangedTicketIds.Length == 0
+            ? new Dictionary<Guid, DateTime>()
+            : await dbContext.TicketMessages
+                .AsNoTracking()
+                .Where(message => rangedTicketIds.Contains(message.TicketId) &&
+                                  (message.AuthorType == TicketAuthorType.Technician ||
+                                   message.AuthorType == TicketAuthorType.Agent))
+                .GroupBy(message => message.TicketId)
+                .Select(group => new FirstResponseTicketProjection(group.Key, group.Min(message => message.CreatedUtc)))
+                .ToDictionaryAsync(item => item.TicketId, item => item.FirstResponseUtc, cancellationToken);
+
+        List<FirstResponseProjection> firstResponses = rangedTicketList
+            .Select(ticket =>
+            {
+                DateTime? firstResponseUtc = firstResponseByTicket.TryGetValue(ticket.Id, out DateTime firstResponse)
+                    ? firstResponse
+                    : null;
+
+                return new FirstResponseProjection(ticket.CreatedUtc, firstResponseUtc);
+            })
+            .ToList();
 
         List<double> firstResponseMinutes = firstResponses
             .Where(item => item.FirstResponseUtc.HasValue)
@@ -183,6 +198,10 @@ public sealed class AnalyticsService(
 
         return (double)numerator / denominator;
     }
+
+    private sealed record TicketProjection(Guid Id, DateTime CreatedUtc, TicketStatus Status, TicketPriority Priority, TicketChannel Channel);
+
+    private sealed record FirstResponseTicketProjection(Guid TicketId, DateTime FirstResponseUtc);
 
     private sealed record FirstResponseProjection(DateTime CreatedUtc, DateTime? FirstResponseUtc);
 }

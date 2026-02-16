@@ -76,7 +76,7 @@ if [[ "$INTEGRITY_RESULT" != "ok" ]]; then
   exit 1
 fi
 
-cp "$DB_PATH" "$PAYLOAD_DIR/helpdesk.db"
+sqlite3 "$DB_PATH" ".backup '$PAYLOAD_DIR/helpdesk.db'"
 
 if [[ -d "$ATTACHMENTS_PATH" ]]; then
   cp -R "$ATTACHMENTS_PATH" "$PAYLOAD_DIR/attachments"

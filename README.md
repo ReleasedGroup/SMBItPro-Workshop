@@ -108,5 +108,6 @@ KPI definitions are documented in `Helpdesk-Light/03-KPI-Definitions.md`.
 ## Deployment
 
 - Deployment docs: `docs/deployment.md`
+- Release readiness and hardening checklist: `docs/release-readiness-security.md`
 - Config templates: `deploy/`
 - Container assets: `docker/` + `docker-compose.yml`

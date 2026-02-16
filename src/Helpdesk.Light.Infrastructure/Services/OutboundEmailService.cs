@@ -54,56 +54,39 @@ public sealed class OutboundEmailService(
 
         foreach (OutboundEmailMessage message in pending)
         {
-            int remainingAttempts = emailOptions.MaxRetryCount - message.AttemptCount;
-            if (remainingAttempts <= 0)
+            if (message.AttemptCount >= emailOptions.MaxRetryCount)
             {
-                message.MarkDeadLetter($"Exceeded retry limit ({emailOptions.MaxRetryCount}).", DateTime.UtcNow);
-                runtimeMetrics.RecordEmailDeadLetter();
-                AddAuditEvent(
-                    message.CustomerId,
-                    tenantContextAccessor.Current.UserId,
-                    "email.dead_lettered",
-                    new { messageId = message.Id, message.TicketId, message.AttemptCount, reason = message.LastError });
+                MarkDeadLetter(message);
                 continue;
             }
 
-            for (int index = 0; index < remainingAttempts; index++)
-            {
-                message.MarkAttempt();
+            message.MarkAttempt();
 
-                try
-                {
-                    await emailTransport.SendAsync(message.ToAddress, message.Subject, message.Body, cancellationToken);
-                    message.MarkSent(DateTime.UtcNow);
-                    runtimeMetrics.RecordEmailSent();
-                    AddAuditEvent(
-                        message.CustomerId,
-                        tenantContextAccessor.Current.UserId,
-                        "email.sent",
-                        new { messageId = message.Id, message.TicketId, message.AttemptCount });
-                    break;
-                }
-                catch (Exception exception)
-                {
-                    message.MarkFailure(exception.Message);
-                    runtimeMetrics.RecordEmailFailed();
-                    AddAuditEvent(
-                        message.CustomerId,
-                        tenantContextAccessor.Current.UserId,
-                        "email.send.failed",
-                        new { messageId = message.Id, message.TicketId, message.AttemptCount, error = exception.Message });
-                }
-            }
-
-            if (message.Status != OutboundEmailStatus.Sent && message.AttemptCount >= emailOptions.MaxRetryCount)
+            try
             {
-                message.MarkDeadLetter($"Exceeded retry limit ({emailOptions.MaxRetryCount}). Last error: {message.LastError}", DateTime.UtcNow);
-                runtimeMetrics.RecordEmailDeadLetter();
+                await emailTransport.SendAsync(message.ToAddress, message.Subject, message.Body, cancellationToken);
+                message.MarkSent(DateTime.UtcNow);
+                runtimeMetrics.RecordEmailSent();
                 AddAuditEvent(
                     message.CustomerId,
                     tenantContextAccessor.Current.UserId,
-                    "email.dead_lettered",
-                    new { messageId = message.Id, message.TicketId, message.AttemptCount, reason = message.LastError });
+                    "email.sent",
+                    new { messageId = message.Id, message.TicketId, message.AttemptCount });
+            }
+            catch (Exception exception)
+            {
+                message.MarkFailure(exception.Message);
+                runtimeMetrics.RecordEmailFailed();
+                AddAuditEvent(
+                    message.CustomerId,
+                    tenantContextAccessor.Current.UserId,
+                    "email.send.failed",
+                    new { messageId = message.Id, message.TicketId, message.AttemptCount, error = exception.Message });
+
+                if (message.AttemptCount >= emailOptions.MaxRetryCount)
+                {
+                    MarkDeadLetter(message);
+                }
             }
         }
 
@@ -169,6 +152,21 @@ public sealed class OutboundEmailService(
                 item.SentUtc,
                 item.DeadLetteredUtc))
             .ToListAsync(cancellationToken);
+    }
+
+    private void MarkDeadLetter(OutboundEmailMessage message)
+    {
+        string reason = string.IsNullOrWhiteSpace(message.LastError)
+            ? $"Exceeded retry limit ({emailOptions.MaxRetryCount})."
+            : $"Exceeded retry limit ({emailOptions.MaxRetryCount}). Last error: {message.LastError}";
+
+        message.MarkDeadLetter(reason, DateTime.UtcNow);
+        runtimeMetrics.RecordEmailDeadLetter();
+        AddAuditEvent(
+            message.CustomerId,
+            tenantContextAccessor.Current.UserId,
+            "email.dead_lettered",
+            new { messageId = message.Id, message.TicketId, message.AttemptCount, reason = message.LastError });
     }
 
     private void AddAuditEvent(Guid customerId, Guid? actorUserId, string eventType, object payload)
