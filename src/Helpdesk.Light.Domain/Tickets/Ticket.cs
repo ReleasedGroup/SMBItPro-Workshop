@@ -75,6 +75,8 @@ public sealed class Ticket
 
     public Guid? AssignedToUserId { get; private set; }
 
+    public Guid? ResolverGroupId { get; private set; }
+
     public DateTime CreatedUtc { get; private set; }
 
     public DateTime UpdatedUtc { get; private set; }
@@ -85,7 +87,13 @@ public sealed class Ticket
 
     public void Assign(Guid? assignedToUserId, DateTime utcNow)
     {
+        Assign(assignedToUserId, null, utcNow);
+    }
+
+    public void Assign(Guid? assignedToUserId, Guid? resolverGroupId, DateTime utcNow)
+    {
         AssignedToUserId = assignedToUserId;
+        ResolverGroupId = resolverGroupId;
         UpdatedUtc = utcNow;
     }
 

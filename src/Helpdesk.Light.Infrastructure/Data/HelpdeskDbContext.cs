@@ -19,6 +19,12 @@ public sealed class HelpdeskDbContext(DbContextOptions<HelpdeskDbContext> option
 
     public DbSet<UnmappedInboundItem> UnmappedInboundItems => Set<UnmappedInboundItem>();
 
+    public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
+
+    public DbSet<ResolverGroup> ResolverGroups => Set<ResolverGroup>();
+
+    public DbSet<TicketCategory> TicketCategories => Set<TicketCategory>();
+
     public DbSet<Ticket> Tickets => Set<Ticket>();
 
     public DbSet<TicketMessage> TicketMessages => Set<TicketMessage>();
@@ -112,6 +118,55 @@ public sealed class HelpdeskDbContext(DbContextOptions<HelpdeskDbContext> option
             entity.HasIndex(item => item.ReceivedUtc);
         });
 
+        builder.Entity<PlatformSetting>(entity =>
+        {
+            entity.ToTable("PlatformSettings");
+            entity.HasKey(item => item.Key);
+            entity.Property(item => item.Key).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.Value).IsRequired();
+            entity.Property(item => item.UpdatedUtc).IsRequired();
+        });
+
+        builder.Entity<ResolverGroup>(entity =>
+        {
+            entity.ToTable("ResolverGroups");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Name).HasMaxLength(200).IsRequired();
+            entity.Property(item => item.IsActive).IsRequired();
+            entity.Property(item => item.CreatedUtc).IsRequired();
+            entity.Property(item => item.UpdatedUtc).IsRequired();
+
+            entity.HasIndex(item => new { item.CustomerId, item.Name }).IsUnique();
+            entity.HasIndex(item => new { item.CustomerId, item.IsActive, item.Name });
+            entity.HasOne<Customer>()
+                .WithMany()
+                .HasForeignKey(item => item.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<TicketCategory>(entity =>
+        {
+            entity.ToTable("TicketCategories");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Name).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.IsActive).IsRequired();
+            entity.Property(item => item.CreatedUtc).IsRequired();
+            entity.Property(item => item.UpdatedUtc).IsRequired();
+
+            entity.HasIndex(item => new { item.CustomerId, item.Name }).IsUnique();
+            entity.HasIndex(item => new { item.CustomerId, item.IsActive, item.Name });
+
+            entity.HasOne<Customer>()
+                .WithMany()
+                .HasForeignKey(item => item.CustomerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne<ResolverGroup>()
+                .WithMany()
+                .HasForeignKey(item => item.ResolverGroupId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
         builder.Entity<Ticket>(entity =>
         {
             entity.ToTable("Tickets");
@@ -141,6 +196,11 @@ public sealed class HelpdeskDbContext(DbContextOptions<HelpdeskDbContext> option
                 .WithMany()
                 .HasForeignKey(item => item.AssignedToUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ResolverGroup>()
+                .WithMany()
+                .HasForeignKey(item => item.ResolverGroupId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasIndex(item => item.ResolverGroupId);
         });
 
         builder.Entity<TicketMessage>(entity =>

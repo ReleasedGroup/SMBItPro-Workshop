@@ -1,0 +1,293 @@
+@page "/resolver-groups"
+@inject HelpdeskApiClient Api
+@inject ClientSession Session
+
+<PageTitle>Resolver Groups</PageTitle>
+
+<h1>Resolver Groups</h1>
+<p>Manage assignment groups used by technicians for ticket routing.</p>
+
+@if (!Session.IsAuthenticated || !CanManage)
+{
+    <section class="panel">
+        <p>Technician or admin sign-in is required to manage resolver groups.</p>
+    </section>
+}
+else
+{
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>Scope</h2>
+            @if (IsAdmin)
+            {
+                <label>
+                    <span>Customer</span>
+                    <select value="@selectedCustomerIdText" @onchange="OnCustomerChangedAsync">
+                        <option value="">Select customer</option>
+                        @foreach (CustomerSummaryDto customer in customers)
+                        {
+                            <option value="@customer.Id">@customer.Name</option>
+                        }
+                    </select>
+                </label>
+            }
+            else
+            {
+                <p>Customer Scope: @Session.CustomerId</p>
+            }
+
+            <button type="button" @onclick="LoadResolverGroupsAsync" disabled="@isBusy || !SelectedCustomerId.HasValue">Refresh Groups</button>
+        </section>
+
+        <section class="panel">
+            <h2>Create Group</h2>
+            <label>
+                <span>Name</span>
+                <input @bind="newGroupName" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="newGroupIsActive" />
+                    Active
+                </span>
+            </label>
+            <button type="button" @onclick="CreateGroupAsync" disabled="@isBusy || !SelectedCustomerId.HasValue">Create Group</button>
+        </section>
+
+        <section class="panel">
+            <h2>Edit Group</h2>
+            <label>
+                <span>Name</span>
+                <input @bind="editGroupName" disabled="@(!selectedGroupId.HasValue)" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="editGroupIsActive" disabled="@(!selectedGroupId.HasValue)" />
+                    Active
+                </span>
+            </label>
+            <button type="button" @onclick="UpdateGroupAsync" disabled="@isBusy || !selectedGroupId.HasValue">Save Group</button>
+            <button type="button" @onclick="DeleteGroupAsync" disabled="@isBusy || !selectedGroupId.HasValue">Delete Group</button>
+        </section>
+    </section>
+
+    <section class="panel">
+        <h2>Groups (@groups.Count)</h2>
+        @if (!SelectedCustomerId.HasValue)
+        {
+            <p>Select a customer to load resolver groups.</p>
+        }
+        else if (groups.Count == 0)
+        {
+            <p>No resolver groups found for this customer.</p>
+        }
+        else
+        {
+            <div class="ticket-list">
+                @foreach (ResolverGroupSummaryDto group in groups)
+                {
+                    <button type="button" class="ticket-row @(selectedGroupId == group.Id ? "selected" : string.Empty)" @onclick="() => SelectGroup(group.Id)">
+                        <span>@group.Name</span>
+                        <span>@group.Id</span>
+                        <span>Active: @group.IsActive</span>
+                    </button>
+                }
+            </div>
+        }
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <section class="panel"><p class="status">@statusMessage</p></section>
+    }
+}
+
+@code {
+    private bool isBusy;
+    private string statusMessage = string.Empty;
+
+    private readonly List<CustomerSummaryDto> customers = [];
+    private readonly List<ResolverGroupSummaryDto> groups = [];
+
+    private string selectedCustomerIdText = string.Empty;
+    private Guid? selectedGroupId;
+
+    private string newGroupName = string.Empty;
+    private bool newGroupIsActive = true;
+
+    private string editGroupName = string.Empty;
+    private bool editGroupIsActive = true;
+
+    private bool IsAdmin => Session.Role == "MspAdmin";
+    private bool CanManage => Session.Role is "MspAdmin" or "Technician";
+    private Guid? SelectedCustomerId => ParseGuidNullable(selectedCustomerIdText);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.IsAuthenticated || !CanManage)
+        {
+            return;
+        }
+
+        if (IsAdmin)
+        {
+            await LoadCustomersAsync();
+        }
+        else if (Session.CustomerId.HasValue)
+        {
+            selectedCustomerIdText = Session.CustomerId.Value.ToString();
+            await LoadResolverGroupsAsync();
+        }
+    }
+
+    private async Task LoadCustomersAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            IReadOnlyList<CustomerSummaryDto> loaded = await Api.ListCustomersAsync();
+            customers.Clear();
+            customers.AddRange(loaded);
+
+            if (!SelectedCustomerId.HasValue && customers.Count > 0)
+            {
+                selectedCustomerIdText = customers[0].Id.ToString();
+            }
+
+            await LoadResolverGroupsAsync();
+        }, "Failed to load customers");
+    }
+
+    private async Task OnCustomerChangedAsync(ChangeEventArgs args)
+    {
+        selectedCustomerIdText = args.Value?.ToString() ?? string.Empty;
+        selectedGroupId = null;
+        editGroupName = string.Empty;
+        editGroupIsActive = true;
+        await LoadResolverGroupsAsync();
+    }
+
+    private async Task LoadResolverGroupsAsync()
+    {
+        Guid? customerId = SelectedCustomerId;
+        if (!customerId.HasValue)
+        {
+            groups.Clear();
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            IReadOnlyList<ResolverGroupSummaryDto> loaded = await Api.ListResolverGroupsAsync(customerId.Value);
+            groups.Clear();
+            groups.AddRange(loaded);
+
+            if (selectedGroupId.HasValue && groups.All(item => item.Id != selectedGroupId.Value))
+            {
+                selectedGroupId = null;
+                editGroupName = string.Empty;
+                editGroupIsActive = true;
+            }
+        }, "Failed to load resolver groups");
+    }
+
+    private void SelectGroup(Guid groupId)
+    {
+        selectedGroupId = groupId;
+        ResolverGroupSummaryDto? group = groups.FirstOrDefault(item => item.Id == groupId);
+        editGroupName = group?.Name ?? string.Empty;
+        editGroupIsActive = group?.IsActive ?? true;
+    }
+
+    private async Task CreateGroupAsync()
+    {
+        Guid? customerId = SelectedCustomerId;
+        if (!customerId.HasValue)
+        {
+            statusMessage = "Select a customer before creating a resolver group.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newGroupName))
+        {
+            statusMessage = "Resolver group name is required.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            ResolverGroupSummaryDto created = await Api.CreateResolverGroupAsync(
+                new CreateResolverGroupRequest(customerId.Value, newGroupName, newGroupIsActive));
+            newGroupName = string.Empty;
+            newGroupIsActive = true;
+            await LoadResolverGroupsAsync();
+            SelectGroup(created.Id);
+        }, "Failed to create resolver group");
+    }
+
+    private async Task UpdateGroupAsync()
+    {
+        if (!selectedGroupId.HasValue)
+        {
+            statusMessage = "Select a resolver group first.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(editGroupName))
+        {
+            statusMessage = "Resolver group name is required.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            await Api.UpdateResolverGroupAsync(
+                selectedGroupId.Value,
+                new UpdateResolverGroupRequest(editGroupName, editGroupIsActive));
+            await LoadResolverGroupsAsync();
+        }, "Failed to update resolver group");
+    }
+
+    private async Task DeleteGroupAsync()
+    {
+        if (!selectedGroupId.HasValue)
+        {
+            statusMessage = "Select a resolver group first.";
+            return;
+        }
+
+        Guid groupId = selectedGroupId.Value;
+
+        await RunBusyAsync(async () =>
+        {
+            await Api.DeleteResolverGroupAsync(groupId);
+            selectedGroupId = null;
+            editGroupName = string.Empty;
+            editGroupIsActive = true;
+            await LoadResolverGroupsAsync();
+        }, "Failed to delete resolver group");
+    }
+
+    private async Task RunBusyAsync(Func<Task> operation, string failurePrefix)
+    {
+        isBusy = true;
+        statusMessage = string.Empty;
+
+        try
+        {
+            await operation();
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"{failurePrefix}: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static Guid? ParseGuidNullable(string raw)
+    {
+        return Guid.TryParse(raw, out Guid parsed) ? parsed : null;
+    }
+}

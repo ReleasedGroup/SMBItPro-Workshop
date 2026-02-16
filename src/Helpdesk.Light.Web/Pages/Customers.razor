@@ -5,12 +5,12 @@
 <PageTitle>Customers</PageTitle>
 
 <h1>Customer Administration</h1>
-<p>Tenant mapping and AI policy controls for MSP admins.</p>
+<p>MSP admin workspace for customer and end-user lifecycle management.</p>
 
 @if (!Session.IsAuthenticated || Session.Role != "MspAdmin")
 {
     <section class="panel">
-        <p>Admin sign-in is required to manage customers and AI policies.</p>
+        <p>Admin sign-in is required to manage customers, end users, and AI policies.</p>
     </section>
 }
 else
@@ -29,10 +29,11 @@ else
                 <div class="ticket-list">
                     @foreach (CustomerSummaryDto customer in customers)
                     {
-                        <button type="button" class="ticket-row @(selectedCustomerId == customer.Id ? "selected" : string.Empty)" @onclick="() => SelectCustomer(customer.Id)">
+                        <button type="button" class="ticket-row @(selectedCustomerId == customer.Id ? "selected" : string.Empty)" @onclick="() => SelectCustomerAsync(customer.Id)">
                             <span>@customer.Name</span>
                             <span>@customer.Id</span>
                             <span>Domains: @customer.DomainCount</span>
+                            <span>Active: @customer.IsActive</span>
                         </button>
                     }
                 </div>
@@ -40,9 +41,55 @@ else
         </section>
 
         <section class="panel">
-            <h2>AI Policy</h2>
-            <p>Set customer policy mode and confidence threshold for auto-response.</p>
+            <h2>Create Customer</h2>
+            <label>
+                <span>Name</span>
+                <input @bind="newCustomerName" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="newCustomerIsActive" />
+                    Active
+                </span>
+            </label>
+            <button type="button" @onclick="CreateCustomerAsync" disabled="@isBusy">Create Customer</button>
+        </section>
 
+        <section class="panel">
+            <h2>Edit Customer</h2>
+            <label>
+                <span>Name</span>
+                <input @bind="editCustomerName" disabled="@(!selectedCustomerId.HasValue)" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="editCustomerIsActive" disabled="@(!selectedCustomerId.HasValue)" />
+                    Active
+                </span>
+            </label>
+            <button type="button" @onclick="UpdateCustomerAsync" disabled="@isBusy || !selectedCustomerId.HasValue">Save Customer</button>
+            <button type="button" @onclick="DeleteCustomerAsync" disabled="@isBusy || !selectedCustomerId.HasValue">Delete Customer</button>
+        </section>
+    </section>
+
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>Domain Mapping</h2>
+            <label>
+                <span>Domain</span>
+                <input @bind="newDomain" placeholder="contoso.com" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="newDomainIsPrimary" />
+                    Primary
+                </span>
+            </label>
+            <button type="button" @onclick="AddDomainAsync" disabled="@isBusy || !selectedCustomerId.HasValue">Add Domain</button>
+        </section>
+
+        <section class="panel">
+            <h2>AI Policy</h2>
             <label>
                 <span>Mode</span>
                 <select @bind="aiMode">
@@ -52,13 +99,73 @@ else
                     }
                 </select>
             </label>
-
             <label>
                 <span>Auto-response Confidence (0-1)</span>
                 <input type="number" step="0.05" min="0" max="1" @bind="confidenceText" />
             </label>
-
             <button type="button" @onclick="SavePolicyAsync" disabled="@isBusy || !selectedCustomerId.HasValue">Save Policy</button>
+        </section>
+    </section>
+
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>End Users</h2>
+            <button type="button" @onclick="LoadEndUsersAsync" disabled="@isBusy || !selectedCustomerId.HasValue">Refresh End Users</button>
+
+            @if (!selectedCustomerId.HasValue)
+            {
+                <p>Select a customer first.</p>
+            }
+            else if (endUsers.Count == 0)
+            {
+                <p>No end users found for this customer.</p>
+            }
+            else
+            {
+                <div class="ticket-list">
+                    @foreach (EndUserSummaryDto user in endUsers)
+                    {
+                        <button type="button" class="ticket-row @(selectedEndUserId == user.Id ? "selected" : string.Empty)" @onclick="() => SelectEndUser(user.Id)">
+                            <span>@user.DisplayName</span>
+                            <span>@user.Email</span>
+                            <span>Confirmed: @user.EmailConfirmed</span>
+                        </button>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel">
+            <h2>Create End User</h2>
+            <label>
+                <span>Email</span>
+                <input type="email" @bind="newEndUserEmail" placeholder="user@domain.com" />
+            </label>
+            <label>
+                <span>Display Name</span>
+                <input @bind="newEndUserDisplayName" />
+            </label>
+            <button type="button" @onclick="CreateEndUserAsync" disabled="@isBusy || !selectedCustomerId.HasValue">Create End User</button>
+        </section>
+
+        <section class="panel">
+            <h2>Edit End User</h2>
+            <label>
+                <span>Email</span>
+                <input type="email" @bind="editEndUserEmail" disabled="@(!selectedEndUserId.HasValue)" />
+            </label>
+            <label>
+                <span>Display Name</span>
+                <input @bind="editEndUserDisplayName" disabled="@(!selectedEndUserId.HasValue)" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="editEndUserEmailConfirmed" disabled="@(!selectedEndUserId.HasValue)" />
+                    Email Confirmed
+                </span>
+            </label>
+            <button type="button" @onclick="UpdateEndUserAsync" disabled="@isBusy || !selectedEndUserId.HasValue || !selectedCustomerId.HasValue">Save End User</button>
+            <button type="button" @onclick="DeleteEndUserAsync" disabled="@isBusy || !selectedEndUserId.HasValue || !selectedCustomerId.HasValue">Delete End User</button>
         </section>
     </section>
 
@@ -70,11 +177,33 @@ else
 
 @code {
     private bool isBusy;
+
     private readonly List<CustomerSummaryDto> customers = [];
+    private readonly List<EndUserSummaryDto> endUsers = [];
+
     private Guid? selectedCustomerId;
+    private Guid? selectedEndUserId;
+
     private string statusMessage = string.Empty;
+
+    private string newCustomerName = string.Empty;
+    private bool newCustomerIsActive = true;
+
+    private string editCustomerName = string.Empty;
+    private bool editCustomerIsActive = true;
+
+    private string newDomain = string.Empty;
+    private bool newDomainIsPrimary = true;
+
     private AiPolicyMode aiMode = AiPolicyMode.SuggestOnly;
     private string confidenceText = "0.80";
+
+    private string newEndUserEmail = string.Empty;
+    private string newEndUserDisplayName = string.Empty;
+
+    private string editEndUserEmail = string.Empty;
+    private string editEndUserDisplayName = string.Empty;
+    private bool editEndUserEmailConfirmed = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -86,10 +215,7 @@ else
 
     private async Task LoadCustomersAsync()
     {
-        isBusy = true;
-        statusMessage = string.Empty;
-
-        try
+        await RunBusyAsync(async () =>
         {
             IReadOnlyList<CustomerSummaryDto> loaded = await Api.ListCustomersAsync();
             customers.Clear();
@@ -97,22 +223,109 @@ else
 
             if (!selectedCustomerId.HasValue && customers.Count > 0)
             {
-                selectedCustomerId = customers[0].Id;
+                await SelectCustomerAsync(customers[0].Id);
             }
-        }
-        catch (Exception exception)
-        {
-            statusMessage = $"Failed to load customers: {exception.Message}";
-        }
-        finally
-        {
-            isBusy = false;
-        }
+            else if (selectedCustomerId.HasValue && customers.All(item => item.Id != selectedCustomerId.Value))
+            {
+                selectedCustomerId = null;
+                ClearCustomerSelectionState();
+            }
+        }, "Failed to load customers");
     }
 
-    private void SelectCustomer(Guid customerId)
+    private async Task SelectCustomerAsync(Guid customerId)
     {
         selectedCustomerId = customerId;
+        selectedEndUserId = null;
+
+        CustomerSummaryDto? customer = customers.FirstOrDefault(item => item.Id == customerId);
+        editCustomerName = customer?.Name ?? string.Empty;
+        editCustomerIsActive = customer?.IsActive ?? true;
+
+        await LoadEndUsersAsync();
+    }
+
+    private async Task CreateCustomerAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newCustomerName))
+        {
+            statusMessage = "Customer name is required.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            CustomerSummaryDto created = await Api.CreateCustomerAsync(new CreateCustomerRequest(newCustomerName, newCustomerIsActive));
+            newCustomerName = string.Empty;
+            newCustomerIsActive = true;
+
+            await LoadCustomersAsync();
+            await SelectCustomerAsync(created.Id);
+            statusMessage = "Customer created.";
+        }, "Failed to create customer");
+    }
+
+    private async Task UpdateCustomerAsync()
+    {
+        if (!selectedCustomerId.HasValue)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(editCustomerName))
+        {
+            statusMessage = "Customer name is required.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            await Api.UpdateCustomerAsync(selectedCustomerId.Value, new UpdateCustomerRequest(editCustomerName, editCustomerIsActive));
+            await LoadCustomersAsync();
+            statusMessage = "Customer updated.";
+        }, "Failed to update customer");
+    }
+
+    private async Task DeleteCustomerAsync()
+    {
+        if (!selectedCustomerId.HasValue)
+        {
+            return;
+        }
+
+        Guid customerId = selectedCustomerId.Value;
+
+        await RunBusyAsync(async () =>
+        {
+            await Api.DeleteCustomerAsync(customerId);
+            selectedCustomerId = null;
+            ClearCustomerSelectionState();
+            await LoadCustomersAsync();
+            statusMessage = "Customer deleted.";
+        }, "Failed to delete customer");
+    }
+
+    private async Task AddDomainAsync()
+    {
+        if (!selectedCustomerId.HasValue)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newDomain))
+        {
+            statusMessage = "Domain is required.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            await Api.AddCustomerDomainAsync(selectedCustomerId.Value, new AddCustomerDomainRequest(newDomain, newDomainIsPrimary));
+            newDomain = string.Empty;
+            newDomainIsPrimary = true;
+            await LoadCustomersAsync();
+            statusMessage = "Domain added.";
+        }, "Failed to add domain");
     }
 
     private async Task SavePolicyAsync()
@@ -128,21 +341,149 @@ else
             return;
         }
 
+        await RunBusyAsync(async () =>
+        {
+            await Api.UpdateCustomerAiPolicyAsync(selectedCustomerId.Value, new CustomerAiPolicyUpdateRequest(aiMode, confidence));
+            statusMessage = "Policy updated.";
+        }, "Failed to update policy");
+    }
+
+    private async Task LoadEndUsersAsync()
+    {
+        if (!selectedCustomerId.HasValue)
+        {
+            endUsers.Clear();
+            selectedEndUserId = null;
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            IReadOnlyList<EndUserSummaryDto> loaded = await Api.ListCustomerEndUsersAsync(selectedCustomerId.Value);
+            endUsers.Clear();
+            endUsers.AddRange(loaded);
+
+            if (selectedEndUserId.HasValue && endUsers.All(item => item.Id != selectedEndUserId.Value))
+            {
+                selectedEndUserId = null;
+                ClearEndUserEditState();
+            }
+        }, "Failed to load end users");
+    }
+
+    private async Task CreateEndUserAsync()
+    {
+        if (!selectedCustomerId.HasValue)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newEndUserEmail) || string.IsNullOrWhiteSpace(newEndUserDisplayName))
+        {
+            statusMessage = "End-user email and display name are required.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            EndUserSummaryDto created = await Api.CreateCustomerEndUserAsync(
+                selectedCustomerId.Value,
+                new CreateEndUserRequest(newEndUserEmail, newEndUserDisplayName));
+
+            newEndUserEmail = string.Empty;
+            newEndUserDisplayName = string.Empty;
+
+            await LoadEndUsersAsync();
+            SelectEndUser(created.Id);
+            statusMessage = "End user created.";
+        }, "Failed to create end user");
+    }
+
+    private void SelectEndUser(Guid userId)
+    {
+        selectedEndUserId = userId;
+        EndUserSummaryDto? user = endUsers.FirstOrDefault(item => item.Id == userId);
+        editEndUserEmail = user?.Email ?? string.Empty;
+        editEndUserDisplayName = user?.DisplayName ?? string.Empty;
+        editEndUserEmailConfirmed = user?.EmailConfirmed ?? true;
+    }
+
+    private async Task UpdateEndUserAsync()
+    {
+        if (!selectedCustomerId.HasValue || !selectedEndUserId.HasValue)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(editEndUserEmail) || string.IsNullOrWhiteSpace(editEndUserDisplayName))
+        {
+            statusMessage = "End-user email and display name are required.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            await Api.UpdateCustomerEndUserAsync(
+                selectedCustomerId.Value,
+                selectedEndUserId.Value,
+                new UpdateEndUserRequest(editEndUserEmail, editEndUserDisplayName, editEndUserEmailConfirmed));
+
+            await LoadEndUsersAsync();
+            statusMessage = "End user updated.";
+        }, "Failed to update end user");
+    }
+
+    private async Task DeleteEndUserAsync()
+    {
+        if (!selectedCustomerId.HasValue || !selectedEndUserId.HasValue)
+        {
+            return;
+        }
+
+        Guid userId = selectedEndUserId.Value;
+
+        await RunBusyAsync(async () =>
+        {
+            await Api.DeleteCustomerEndUserAsync(selectedCustomerId.Value, userId);
+            selectedEndUserId = null;
+            ClearEndUserEditState();
+            await LoadEndUsersAsync();
+            statusMessage = "End user deleted.";
+        }, "Failed to delete end user");
+    }
+
+    private async Task RunBusyAsync(Func<Task> action, string errorPrefix)
+    {
         isBusy = true;
         statusMessage = string.Empty;
 
         try
         {
-            await Api.UpdateCustomerAiPolicyAsync(selectedCustomerId.Value, new CustomerAiPolicyUpdateRequest(aiMode, confidence));
-            statusMessage = "Policy updated.";
+            await action();
         }
         catch (Exception exception)
         {
-            statusMessage = $"Failed to update policy: {exception.Message}";
+            statusMessage = $"{errorPrefix}: {exception.Message}";
         }
         finally
         {
             isBusy = false;
         }
+    }
+
+    private void ClearCustomerSelectionState()
+    {
+        editCustomerName = string.Empty;
+        editCustomerIsActive = true;
+        endUsers.Clear();
+        selectedEndUserId = null;
+        ClearEndUserEditState();
+    }
+
+    private void ClearEndUserEditState()
+    {
+        editEndUserEmail = string.Empty;
+        editEndUserDisplayName = string.Empty;
+        editEndUserEmailConfirmed = true;
     }
 }

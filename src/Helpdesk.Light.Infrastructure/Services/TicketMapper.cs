@@ -20,6 +20,7 @@ internal static class TicketMapper
             ticket.Subject,
             ticket.Summary,
             ticket.AssignedToUserId,
+            ticket.ResolverGroupId,
             ticket.CreatedUtc,
             ticket.UpdatedUtc,
             ticket.ResolvedUtc,

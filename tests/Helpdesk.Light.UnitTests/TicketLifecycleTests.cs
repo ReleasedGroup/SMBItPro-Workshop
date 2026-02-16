@@ -54,4 +54,30 @@ public sealed class TicketLifecycleTests
 
         Assert.Equal("HD-4F8F4F1D4D8249B296B24B2468347634", reference);
     }
+
+    [Fact]
+    public void Assign_CanSetResolverGroupAndClear()
+    {
+        Ticket ticket = new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            TicketChannel.Web,
+            "VPN issue",
+            "Cannot connect to VPN.",
+            TicketPriority.Medium,
+            DateTime.UtcNow);
+
+        Guid resolverGroupId = Guid.NewGuid();
+        ticket.Assign(null, resolverGroupId, DateTime.UtcNow);
+
+        Assert.Null(ticket.AssignedToUserId);
+        Assert.Equal(resolverGroupId, ticket.ResolverGroupId);
+
+        Guid technicianId = Guid.NewGuid();
+        ticket.Assign(technicianId, null, DateTime.UtcNow);
+
+        Assert.Equal(technicianId, ticket.AssignedToUserId);
+        Assert.Null(ticket.ResolverGroupId);
+    }
 }

@@ -1,0 +1,267 @@
+@page "/settings"
+@inject HelpdeskApiClient Api
+@inject ClientSession Session
+
+<PageTitle>Settings</PageTitle>
+
+<h1>Platform Settings</h1>
+<p>Configure AI and outbound email transport for the helpdesk platform.</p>
+
+@if (!Session.IsAuthenticated || Session.Role != "MspAdmin")
+{
+    <section class="panel">
+        <p>MSP admin sign-in is required to manage platform settings.</p>
+    </section>
+}
+else
+{
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>AI Settings</h2>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="enableAi" />
+                    Enable AI
+                </span>
+            </label>
+            <label>
+                <span>Model</span>
+                <input value="@modelId" disabled />
+            </label>
+            <label>
+                <span>OpenAI API Key</span>
+                <input type="password" @bind="openAiApiKey" placeholder="sk-..." />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="clearOpenAiApiKey" />
+                    Clear existing OpenAI API key
+                </span>
+            </label>
+            <p>Saved key: @(hasOpenAiApiKey ? "Configured" : "Not configured")</p>
+        </section>
+
+        <section class="panel">
+            <h2>Email Transport</h2>
+            <label>
+                <span>Transport Mode</span>
+                <select @bind="emailTransportMode">
+                    <option value="@EmailTransportModes.Console">Console</option>
+                    <option value="@EmailTransportModes.Smtp">SMTP</option>
+                    <option value="@EmailTransportModes.Graph">Microsoft Graph</option>
+                </select>
+            </label>
+        </section>
+    </section>
+
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>SMTP Settings</h2>
+            <label>
+                <span>Host</span>
+                <input @bind="smtpHost" placeholder="smtp.office365.com" />
+            </label>
+            <label>
+                <span>Port</span>
+                <input type="number" min="1" max="65535" @bind="smtpPortText" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="smtpUseSsl" />
+                    Use SSL/TLS
+                </span>
+            </label>
+            <label>
+                <span>Username</span>
+                <input @bind="smtpUsername" />
+            </label>
+            <label>
+                <span>Password</span>
+                <input type="password" @bind="smtpPassword" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="clearSmtpPassword" />
+                    Clear existing SMTP password
+                </span>
+            </label>
+            <label>
+                <span>From Address</span>
+                <input type="email" @bind="smtpFromAddress" placeholder="helpdesk@yourdomain.com" />
+            </label>
+            <label>
+                <span>From Display Name</span>
+                <input @bind="smtpFromDisplayName" />
+            </label>
+            <p>Saved password: @(hasSmtpPassword ? "Configured" : "Not configured")</p>
+        </section>
+
+        <section class="panel">
+            <h2>Microsoft Graph Email</h2>
+            <p class="hint">Use app registration with Mail.Send application permissions.</p>
+            <label>
+                <span>Tenant Id</span>
+                <input @bind="graphTenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+            </label>
+            <label>
+                <span>Client Id</span>
+                <input @bind="graphClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+            </label>
+            <label>
+                <span>Client Secret</span>
+                <input type="password" @bind="graphClientSecret" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="clearGraphClientSecret" />
+                    Clear existing Graph client secret
+                </span>
+            </label>
+            <label>
+                <span>Sender User Id / UPN</span>
+                <input @bind="graphSenderUserId" placeholder="helpdesk@yourdomain.com" />
+            </label>
+            <p>Saved client secret: @(hasGraphClientSecret ? "Configured" : "Not configured")</p>
+        </section>
+    </section>
+
+    <section class="panel">
+        <button type="button" @onclick="SaveAsync" disabled="@isBusy">Save Settings</button>
+        <button type="button" @onclick="LoadAsync" disabled="@isBusy">Reload</button>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <section class="panel"><p class="status">@statusMessage</p></section>
+    }
+}
+
+@code {
+    private bool isBusy;
+    private string statusMessage = string.Empty;
+
+    private bool enableAi = true;
+    private string modelId = string.Empty;
+    private bool hasOpenAiApiKey;
+    private string openAiApiKey = string.Empty;
+    private bool clearOpenAiApiKey;
+
+    private string emailTransportMode = EmailTransportModes.Console;
+
+    private string smtpHost = string.Empty;
+    private string smtpPortText = "587";
+    private bool smtpUseSsl = true;
+    private string smtpUsername = string.Empty;
+    private string smtpPassword = string.Empty;
+    private bool clearSmtpPassword;
+    private string smtpFromAddress = string.Empty;
+    private string smtpFromDisplayName = string.Empty;
+    private bool hasSmtpPassword;
+
+    private string graphTenantId = string.Empty;
+    private string graphClientId = string.Empty;
+    private string graphClientSecret = string.Empty;
+    private bool clearGraphClientSecret;
+    private string graphSenderUserId = string.Empty;
+    private bool hasGraphClientSecret;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.Role == "MspAdmin")
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            PlatformSettingsDto settings = await Api.GetPlatformSettingsAsync();
+            Apply(settings);
+        }, "Failed to load settings");
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!int.TryParse(smtpPortText, out int smtpPort))
+        {
+            statusMessage = "SMTP port must be a valid number.";
+            return;
+        }
+
+        PlatformSettingsUpdateRequest request = new(
+            enableAi,
+            emailTransportMode,
+            string.IsNullOrWhiteSpace(openAiApiKey) ? null : openAiApiKey,
+            clearOpenAiApiKey,
+            new SmtpSettingsUpdateRequest(
+                smtpHost,
+                smtpPort,
+                smtpUseSsl,
+                smtpUsername,
+                smtpFromAddress,
+                smtpFromDisplayName,
+                string.IsNullOrWhiteSpace(smtpPassword) ? null : smtpPassword,
+                clearSmtpPassword),
+            new GraphEmailSettingsUpdateRequest(
+                graphTenantId,
+                graphClientId,
+                graphSenderUserId,
+                string.IsNullOrWhiteSpace(graphClientSecret) ? null : graphClientSecret,
+                clearGraphClientSecret));
+
+        await RunBusyAsync(async () =>
+        {
+            PlatformSettingsDto updated = await Api.UpdatePlatformSettingsAsync(request);
+            Apply(updated);
+            statusMessage = "Settings saved.";
+        }, "Failed to save settings");
+    }
+
+    private void Apply(PlatformSettingsDto settings)
+    {
+        enableAi = settings.EnableAi;
+        modelId = settings.ModelId;
+        hasOpenAiApiKey = settings.HasOpenAIApiKey;
+        emailTransportMode = settings.EmailTransportMode;
+
+        smtpHost = settings.Smtp.Host;
+        smtpPortText = settings.Smtp.Port.ToString();
+        smtpUseSsl = settings.Smtp.UseSsl;
+        smtpUsername = settings.Smtp.Username;
+        smtpFromAddress = settings.Smtp.FromAddress;
+        smtpFromDisplayName = settings.Smtp.FromDisplayName;
+        hasSmtpPassword = settings.Smtp.HasPassword;
+
+        graphTenantId = settings.Graph.TenantId;
+        graphClientId = settings.Graph.ClientId;
+        graphSenderUserId = settings.Graph.SenderUserId;
+        hasGraphClientSecret = settings.Graph.HasClientSecret;
+
+        openAiApiKey = string.Empty;
+        clearOpenAiApiKey = false;
+        smtpPassword = string.Empty;
+        clearSmtpPassword = false;
+        graphClientSecret = string.Empty;
+        clearGraphClientSecret = false;
+    }
+
+    private async Task RunBusyAsync(Func<Task> action, string errorPrefix)
+    {
+        isBusy = true;
+        statusMessage = string.Empty;
+        try
+        {
+            await action();
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"{errorPrefix}: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+}
