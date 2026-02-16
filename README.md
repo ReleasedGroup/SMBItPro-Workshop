@@ -31,6 +31,33 @@ CI-ready test command:
 dotnet test Helpdesk.Light.slnx --configuration Release --no-build
 ```
 
+## CI/CD
+
+GitHub Actions workflows are provided in `.github/workflows/`:
+
+- `ci.yml`: runs on pull requests, pushes to branches (excluding `v*` tags), and manual dispatch.
+  - Restores dependencies.
+  - Builds in `Release` with warnings-as-errors.
+  - Runs unit and integration tests with code coverage collection.
+  - Uploads test result artifacts (`TRX` + coverage files).
+- `release.yml`: runs on release tags (`v*`), release publication, or manual dispatch.
+  - Packages API and Worker as self-contained binaries for:
+    - `linux-x64`
+    - `linux-arm64`
+    - `win-x64`
+    - `osx-x64`
+    - `osx-arm64`
+  - Packages Web as a static `wwwroot` bundle.
+  - Generates `SHA256SUMS.txt`.
+  - Attaches all packaged assets to the GitHub release.
+
+To trigger a release package build from Git:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## Run API
 
 ```bash

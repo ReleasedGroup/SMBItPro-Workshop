@@ -51,6 +51,39 @@ public sealed class TicketsController(
         {
             return BadRequest(new { message = exception.Message });
         }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
+    }
+
+    [HttpPost("public")]
+    [AllowAnonymous]
+    [ProducesResponseType<TicketSummaryDto>(StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<TicketSummaryDto>> CreatePublic([FromBody] CreateTicketRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            TicketSummaryDto created = await ticketService.CreateTicketAsync(request, cancellationToken);
+            return Created($"/api/v1/tickets/{created.Id}", created);
+        }
+        catch (TenantAccessDeniedException)
+        {
+            return Forbid();
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
     }
 
     [HttpGet("{ticketId:guid}")]
@@ -94,6 +127,7 @@ public sealed class TicketsController(
     [HttpPost("{ticketId:guid}/assign")]
     [Authorize(Roles = $"{RoleNames.Technician},{RoleNames.MspAdmin}")]
     [ProducesResponseType<TicketSummaryDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TicketSummaryDto>> Assign(Guid ticketId, [FromBody] TicketAssignRequest request, CancellationToken cancellationToken)
@@ -110,6 +144,10 @@ public sealed class TicketsController(
         catch (TenantAccessDeniedException)
         {
             return Forbid();
+        }
+        catch (InvalidOperationException exception)
+        {
+            return BadRequest(new { message = exception.Message });
         }
     }
 

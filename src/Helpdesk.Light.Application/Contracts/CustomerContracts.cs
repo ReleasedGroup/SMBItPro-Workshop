@@ -8,7 +8,20 @@ public sealed record CustomerDetailDto(Guid Id, string Name, bool IsActive, IRea
 
 public sealed record CreateCustomerRequest(string Name, bool IsActive);
 
+public sealed record UpdateCustomerRequest(string Name, bool IsActive);
+
 public sealed record AddCustomerDomainRequest(string Domain, bool IsPrimary);
+
+public sealed record EndUserSummaryDto(
+    Guid Id,
+    Guid CustomerId,
+    string Email,
+    string DisplayName,
+    bool EmailConfirmed);
+
+public sealed record CreateEndUserRequest(string Email, string DisplayName);
+
+public sealed record UpdateEndUserRequest(string Email, string DisplayName, bool EmailConfirmed);
 
 public sealed record ResolveSenderRequest(string SenderEmail, string? Subject);
 

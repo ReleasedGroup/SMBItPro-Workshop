@@ -1,25 +1,24 @@
-using Helpdesk.Light.Infrastructure.Options;
+using Helpdesk.Light.Application.Abstractions;
+using Helpdesk.Light.Application.Contracts;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Options;
 
 namespace Helpdesk.Light.Infrastructure.Health;
 
-public sealed class AiProviderHealthCheck(IOptions<AiOptions> options) : IHealthCheck
+public sealed class AiProviderHealthCheck(IPlatformSettingsService platformSettingsService) : IHealthCheck
 {
-    private readonly AiOptions aiOptions = options.Value;
-
-    public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
-        if (!aiOptions.EnableAi)
+        RuntimePlatformSettings settings = await platformSettingsService.GetRuntimeSettingsAsync(cancellationToken);
+        if (!settings.EnableAi)
         {
-            return Task.FromResult(HealthCheckResult.Healthy("AI provider is disabled by configuration."));
+            return HealthCheckResult.Healthy("AI provider is disabled by configuration.");
         }
 
-        if (string.IsNullOrWhiteSpace(aiOptions.OpenAIApiKey))
+        if (string.IsNullOrWhiteSpace(settings.OpenAIApiKey))
         {
-            return Task.FromResult(HealthCheckResult.Degraded("AI provider key is missing; fallback generation is active."));
+            return HealthCheckResult.Degraded("AI provider key is missing; fallback generation is active.");
         }
 
-        return Task.FromResult(HealthCheckResult.Healthy($"AI provider configured with model '{aiOptions.ModelId}'."));
+        return HealthCheckResult.Healthy($"AI provider configured with model '{settings.ModelId}'.");
     }
 }

@@ -89,6 +89,14 @@ public sealed class HelpdeskApiClient(HttpClient httpClient, ClientSession sessi
         return (await response.Content.ReadFromJsonAsync<TicketSummaryDto>(cancellationToken: cancellationToken))!;
     }
 
+    public async Task<TicketSummaryDto> CreatePublicTicketAsync(CreateTicketRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsJsonAsync("api/v1/tickets/public", request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        return (await response.Content.ReadFromJsonAsync<TicketSummaryDto>(cancellationToken: cancellationToken))!;
+    }
+
     public async Task<TicketMessageDto> AddMessageAsync(Guid ticketId, TicketMessageCreateRequest request, CancellationToken cancellationToken = default)
     {
         using HttpRequestMessage message = CreateRequest(HttpMethod.Post, $"api/v1/tickets/{ticketId}/messages");
@@ -109,6 +117,89 @@ public sealed class HelpdeskApiClient(HttpClient httpClient, ClientSession sessi
         await EnsureSuccessAsync(response, cancellationToken);
 
         return (await response.Content.ReadFromJsonAsync<TicketSummaryDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<ResolverAssignmentOptionsDto> GetResolverAssignmentOptionsAsync(Guid customerId, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Get, $"api/v1/resolver-groups/options?customerId={customerId}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        return (await response.Content.ReadFromJsonAsync<ResolverAssignmentOptionsDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<IReadOnlyList<ResolverGroupSummaryDto>> ListResolverGroupsAsync(Guid? customerId = null, CancellationToken cancellationToken = default)
+    {
+        string query = customerId.HasValue ? $"?customerId={customerId.Value}" : string.Empty;
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Get, $"api/v1/resolver-groups{query}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        return await response.Content.ReadFromJsonAsync<List<ResolverGroupSummaryDto>>(cancellationToken: cancellationToken) ?? [];
+    }
+
+    public async Task<ResolverGroupSummaryDto> CreateResolverGroupAsync(CreateResolverGroupRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Post, "api/v1/resolver-groups");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<ResolverGroupSummaryDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<ResolverGroupSummaryDto> UpdateResolverGroupAsync(Guid resolverGroupId, UpdateResolverGroupRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Put, $"api/v1/resolver-groups/{resolverGroupId}");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<ResolverGroupSummaryDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task DeleteResolverGroupAsync(Guid resolverGroupId, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Delete, $"api/v1/resolver-groups/{resolverGroupId}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<TicketCategorySummaryDto>> ListTicketCategoriesAsync(Guid? customerId = null, CancellationToken cancellationToken = default)
+    {
+        string query = customerId.HasValue ? $"?customerId={customerId.Value}" : string.Empty;
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Get, $"api/v1/ticket-categories{query}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        return await response.Content.ReadFromJsonAsync<List<TicketCategorySummaryDto>>(cancellationToken: cancellationToken) ?? [];
+    }
+
+    public async Task<TicketCategorySummaryDto> CreateTicketCategoryAsync(CreateTicketCategoryRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Post, "api/v1/ticket-categories");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<TicketCategorySummaryDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<TicketCategorySummaryDto> UpdateTicketCategoryAsync(Guid ticketCategoryId, UpdateTicketCategoryRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Put, $"api/v1/ticket-categories/{ticketCategoryId}");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<TicketCategorySummaryDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task DeleteTicketCategoryAsync(Guid ticketCategoryId, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Delete, $"api/v1/ticket-categories/{ticketCategoryId}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
     }
 
     public async Task<TicketSummaryDto> UpdateStatusAsync(Guid ticketId, TicketStatusUpdateRequest request, CancellationToken cancellationToken = default)
@@ -196,6 +287,24 @@ public sealed class HelpdeskApiClient(HttpClient httpClient, ClientSession sessi
         return (await response.Content.ReadFromJsonAsync<InboundEmailProcessResult>(cancellationToken: cancellationToken))!;
     }
 
+    public async Task<PlatformSettingsDto> GetPlatformSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Get, "api/v1/admin/settings");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<PlatformSettingsDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<PlatformSettingsDto> UpdatePlatformSettingsAsync(PlatformSettingsUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Put, "api/v1/admin/settings");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<PlatformSettingsDto>(cancellationToken: cancellationToken))!;
+    }
+
     public async Task<IReadOnlyList<CustomerSummaryDto>> ListCustomersAsync(CancellationToken cancellationToken = default)
     {
         using HttpRequestMessage message = CreateRequest(HttpMethod.Get, "api/v1/admin/customers");
@@ -203,6 +312,78 @@ public sealed class HelpdeskApiClient(HttpClient httpClient, ClientSession sessi
         await EnsureSuccessAsync(response, cancellationToken);
 
         return await response.Content.ReadFromJsonAsync<List<CustomerSummaryDto>>(cancellationToken: cancellationToken) ?? [];
+    }
+
+    public async Task<CustomerSummaryDto> CreateCustomerAsync(CreateCustomerRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Post, "api/v1/admin/customers");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<CustomerSummaryDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<CustomerSummaryDto> UpdateCustomerAsync(Guid customerId, UpdateCustomerRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Put, $"api/v1/admin/customers/{customerId}");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<CustomerSummaryDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task DeleteCustomerAsync(Guid customerId, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Delete, $"api/v1/admin/customers/{customerId}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task<CustomerDomainDto> AddCustomerDomainAsync(Guid customerId, AddCustomerDomainRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Post, $"api/v1/admin/customers/{customerId}/domains");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<CustomerDomainDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<IReadOnlyList<EndUserSummaryDto>> ListCustomerEndUsersAsync(Guid customerId, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Get, $"api/v1/admin/customers/{customerId}/end-users");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<List<EndUserSummaryDto>>(cancellationToken: cancellationToken) ?? [];
+    }
+
+    public async Task<EndUserSummaryDto> CreateCustomerEndUserAsync(Guid customerId, CreateEndUserRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Post, $"api/v1/admin/customers/{customerId}/end-users");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<EndUserSummaryDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task<EndUserSummaryDto> UpdateCustomerEndUserAsync(Guid customerId, Guid userId, UpdateEndUserRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Put, $"api/v1/admin/customers/{customerId}/end-users/{userId}");
+        message.Content = JsonContent.Create(request);
+
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<EndUserSummaryDto>(cancellationToken: cancellationToken))!;
+    }
+
+    public async Task DeleteCustomerEndUserAsync(Guid customerId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage message = CreateRequest(HttpMethod.Delete, $"api/v1/admin/customers/{customerId}/end-users/{userId}");
+        using HttpResponseMessage response = await httpClient.SendAsync(message, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
     }
 
     public async Task UpdateCustomerAiPolicyAsync(Guid customerId, CustomerAiPolicyUpdateRequest request, CancellationToken cancellationToken = default)

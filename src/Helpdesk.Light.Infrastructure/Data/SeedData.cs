@@ -18,6 +18,7 @@ public static class SeedData
         UserManager<ApplicationUser> userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
 
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await DatabaseSchemaUpgrade.EnsureUpToDateAsync(dbContext, cancellationToken);
 
         string[] roles = [RoleNames.MspAdmin, RoleNames.Technician, RoleNames.EndUser];
         foreach (string role in roles)

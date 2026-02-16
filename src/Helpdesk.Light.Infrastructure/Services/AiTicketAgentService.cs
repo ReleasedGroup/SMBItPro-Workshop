@@ -7,14 +7,13 @@ using Helpdesk.Light.Application.Abstractions.Ai;
 using Helpdesk.Light.Application.Abstractions.Email;
 using Helpdesk.Light.Application.Abstractions.Tickets;
 using Helpdesk.Light.Application.Contracts.Ai;
+using Helpdesk.Light.Application.Contracts;
 using Helpdesk.Light.Application.Errors;
 using Helpdesk.Light.Domain.Ai;
 using Helpdesk.Light.Domain.Tickets;
 using Helpdesk.Light.Infrastructure.Data;
-using Helpdesk.Light.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 
@@ -34,9 +33,8 @@ public sealed class AiTicketAgentService : IAiTicketAgentService
     private readonly ITicketAccessGuard ticketAccessGuard;
     private readonly IOutboundEmailService outboundEmailService;
     private readonly IRuntimeMetricsRecorder runtimeMetrics;
-    private readonly AiOptions aiOptions;
+    private readonly IPlatformSettingsService platformSettingsService;
     private readonly ILogger<AiTicketAgentService> logger;
-    private readonly Kernel? kernel;
 
     public AiTicketAgentService(
         HelpdeskDbContext dbContext,
@@ -44,7 +42,7 @@ public sealed class AiTicketAgentService : IAiTicketAgentService
         ITicketAccessGuard ticketAccessGuard,
         IOutboundEmailService outboundEmailService,
         IRuntimeMetricsRecorder runtimeMetrics,
-        IOptions<AiOptions> options,
+        IPlatformSettingsService platformSettingsService,
         ILogger<AiTicketAgentService> logger)
     {
         this.dbContext = dbContext;
@@ -52,9 +50,8 @@ public sealed class AiTicketAgentService : IAiTicketAgentService
         this.ticketAccessGuard = ticketAccessGuard;
         this.outboundEmailService = outboundEmailService;
         this.runtimeMetrics = runtimeMetrics;
-        this.aiOptions = options.Value;
+        this.platformSettingsService = platformSettingsService;
         this.logger = logger;
-        kernel = BuildKernel(aiOptions);
     }
 
     public async Task<AiRunResult> RunForTicketAsync(AiRunRequest request, CancellationToken cancellationToken = default)
@@ -82,13 +79,14 @@ public sealed class AiTicketAgentService : IAiTicketAgentService
                 .ToListAsync(cancellationToken);
 
             DateTime utcNow = DateTime.UtcNow;
-            AiGeneration generated = await GenerateSuggestionAsync(ticket, messages, articles, cancellationToken);
+            RuntimePlatformSettings runtimeSettings = await platformSettingsService.GetRuntimeSettingsAsync(cancellationToken);
+            AiGeneration generated = await GenerateSuggestionAsync(ticket, messages, articles, runtimeSettings, cancellationToken);
 
             string mode = customer.AiPolicyMode.ToString();
             AiRun run = new(
                 Guid.NewGuid(),
                 ticket.Id,
-                aiOptions.ModelId,
+                runtimeSettings.ModelId,
                 mode,
                 generated.PromptHash,
                 generated.InputTokens,
@@ -277,15 +275,15 @@ public sealed class AiTicketAgentService : IAiTicketAgentService
         return ToResult(ticketId, suggestion, false);
     }
 
-    private static Kernel? BuildKernel(AiOptions options)
+    private static Kernel? BuildKernel(RuntimePlatformSettings settings)
     {
-        if (!options.EnableAi || string.IsNullOrWhiteSpace(options.OpenAIApiKey))
+        if (!settings.EnableAi || string.IsNullOrWhiteSpace(settings.OpenAIApiKey))
         {
             return null;
         }
 
         IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.AddOpenAIChatCompletion(options.ModelId, options.OpenAIApiKey);
+        builder.AddOpenAIChatCompletion(settings.ModelId, settings.OpenAIApiKey);
         return builder.Build();
     }
 
@@ -293,10 +291,12 @@ public sealed class AiTicketAgentService : IAiTicketAgentService
         Ticket ticket,
         IReadOnlyList<TicketMessage> messages,
         IReadOnlyList<KnowledgeArticle> articles,
+        RuntimePlatformSettings runtimeSettings,
         CancellationToken cancellationToken)
     {
         string prompt = BuildPrompt(ticket, messages, articles);
         string promptHash = ComputeSha256(prompt);
+        Kernel? kernel = BuildKernel(runtimeSettings);
 
         if (kernel is null)
         {

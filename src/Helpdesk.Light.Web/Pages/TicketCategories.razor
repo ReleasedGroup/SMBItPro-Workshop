@@ -1,0 +1,360 @@
+@page "/ticket-categories"
+@inject HelpdeskApiClient Api
+@inject ClientSession Session
+
+<PageTitle>Ticket Categories</PageTitle>
+
+<h1>Ticket Categories</h1>
+<p>Define triage categories and optionally map each category to a resolver group.</p>
+
+@if (!Session.IsAuthenticated || !CanManage)
+{
+    <section class="panel">
+        <p>Technician or admin sign-in is required to manage ticket categories.</p>
+    </section>
+}
+else
+{
+    <section class="panel-grid">
+        <section class="panel">
+            <h2>Scope</h2>
+            @if (IsAdmin)
+            {
+                <label>
+                    <span>Customer</span>
+                    <select value="@selectedCustomerIdText" @onchange="OnCustomerChangedAsync">
+                        <option value="">Select customer</option>
+                        @foreach (CustomerSummaryDto customer in customers)
+                        {
+                            <option value="@customer.Id">@customer.Name</option>
+                        }
+                    </select>
+                </label>
+            }
+            else
+            {
+                <p>Customer Scope: @Session.CustomerId</p>
+            }
+
+            <button type="button" @onclick="LoadCategoriesAsync" disabled="@isBusy || !SelectedCustomerId.HasValue">Refresh Categories</button>
+        </section>
+
+        <section class="panel">
+            <h2>Create Category</h2>
+            <label>
+                <span>Name</span>
+                <input @bind="newCategoryName" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="newCategoryIsActive" />
+                    Active
+                </span>
+            </label>
+            <label>
+                <span>Resolver Group Mapping</span>
+                <select @bind="newResolverGroupIdText" disabled="@(!SelectedCustomerId.HasValue)">
+                    <option value="">No mapping</option>
+                    @foreach (ResolverGroupSummaryDto group in resolverGroups)
+                    {
+                        <option value="@group.Id">@group.Name (@(group.IsActive ? "Active" : "Inactive"))</option>
+                    }
+                </select>
+            </label>
+            <button type="button" @onclick="CreateCategoryAsync" disabled="@isBusy || !SelectedCustomerId.HasValue">Create Category</button>
+        </section>
+
+        <section class="panel">
+            <h2>Edit Category</h2>
+            <label>
+                <span>Name</span>
+                <input @bind="editCategoryName" disabled="@(!selectedCategoryId.HasValue)" />
+            </label>
+            <label>
+                <span>
+                    <input type="checkbox" @bind="editCategoryIsActive" disabled="@(!selectedCategoryId.HasValue)" />
+                    Active
+                </span>
+            </label>
+            <label>
+                <span>Resolver Group Mapping</span>
+                <select @bind="editResolverGroupIdText" disabled="@(!selectedCategoryId.HasValue)">
+                    <option value="">No mapping</option>
+                    @foreach (ResolverGroupSummaryDto group in resolverGroups)
+                    {
+                        <option value="@group.Id">@group.Name (@(group.IsActive ? "Active" : "Inactive"))</option>
+                    }
+                </select>
+            </label>
+            <button type="button" @onclick="UpdateCategoryAsync" disabled="@isBusy || !selectedCategoryId.HasValue">Save Category</button>
+            <button type="button" @onclick="DeleteCategoryAsync" disabled="@isBusy || !selectedCategoryId.HasValue">Delete Category</button>
+        </section>
+    </section>
+
+    <section class="panel">
+        <h2>Categories (@categories.Count)</h2>
+        @if (!SelectedCustomerId.HasValue)
+        {
+            <p>Select a customer to load categories.</p>
+        }
+        else if (categories.Count == 0)
+        {
+            <p>No categories found for this customer.</p>
+        }
+        else
+        {
+            <div class="ticket-list">
+                @foreach (TicketCategorySummaryDto category in categories)
+                {
+                    <button type="button" class="ticket-row @(selectedCategoryId == category.Id ? "selected" : string.Empty)" @onclick="() => SelectCategory(category.Id)">
+                        <span>@category.Name</span>
+                        <span>Active: @category.IsActive</span>
+                        <span>Mapped Group: @FormatResolverGroupName(category.ResolverGroupId)</span>
+                        <span>@category.Id</span>
+                    </button>
+                }
+            </div>
+        }
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <section class="panel"><p class="status">@statusMessage</p></section>
+    }
+}
+
+@code {
+    private bool isBusy;
+    private string statusMessage = string.Empty;
+
+    private readonly List<CustomerSummaryDto> customers = [];
+    private readonly List<ResolverGroupSummaryDto> resolverGroups = [];
+    private readonly List<TicketCategorySummaryDto> categories = [];
+
+    private string selectedCustomerIdText = string.Empty;
+    private Guid? selectedCategoryId;
+
+    private string newCategoryName = string.Empty;
+    private bool newCategoryIsActive = true;
+    private string newResolverGroupIdText = string.Empty;
+
+    private string editCategoryName = string.Empty;
+    private bool editCategoryIsActive = true;
+    private string editResolverGroupIdText = string.Empty;
+
+    private bool IsAdmin => Session.Role == "MspAdmin";
+    private bool CanManage => Session.Role is "MspAdmin" or "Technician";
+    private Guid? SelectedCustomerId => ParseGuidNullable(selectedCustomerIdText);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.IsAuthenticated || !CanManage)
+        {
+            return;
+        }
+
+        if (IsAdmin)
+        {
+            await LoadCustomersAsync();
+        }
+        else if (Session.CustomerId.HasValue)
+        {
+            selectedCustomerIdText = Session.CustomerId.Value.ToString();
+            await LoadResolverGroupsAsync();
+            await LoadCategoriesAsync();
+        }
+    }
+
+    private async Task LoadCustomersAsync()
+    {
+        await RunBusyAsync(async () =>
+        {
+            IReadOnlyList<CustomerSummaryDto> loaded = await Api.ListCustomersAsync();
+            customers.Clear();
+            customers.AddRange(loaded);
+
+            if (!SelectedCustomerId.HasValue && customers.Count > 0)
+            {
+                selectedCustomerIdText = customers[0].Id.ToString();
+            }
+
+            await LoadResolverGroupsAsync();
+            await LoadCategoriesAsync();
+        }, "Failed to load customers");
+    }
+
+    private async Task OnCustomerChangedAsync(ChangeEventArgs args)
+    {
+        selectedCustomerIdText = args.Value?.ToString() ?? string.Empty;
+        selectedCategoryId = null;
+        ClearEditState();
+        await LoadResolverGroupsAsync();
+        await LoadCategoriesAsync();
+    }
+
+    private async Task LoadResolverGroupsAsync()
+    {
+        Guid? customerId = SelectedCustomerId;
+        if (!customerId.HasValue)
+        {
+            resolverGroups.Clear();
+            return;
+        }
+
+        IReadOnlyList<ResolverGroupSummaryDto> loaded = await Api.ListResolverGroupsAsync(customerId.Value);
+        resolverGroups.Clear();
+        resolverGroups.AddRange(loaded.OrderBy(item => item.Name));
+    }
+
+    private async Task LoadCategoriesAsync()
+    {
+        Guid? customerId = SelectedCustomerId;
+        if (!customerId.HasValue)
+        {
+            categories.Clear();
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            IReadOnlyList<TicketCategorySummaryDto> loaded = await Api.ListTicketCategoriesAsync(customerId.Value);
+            categories.Clear();
+            categories.AddRange(loaded);
+
+            if (selectedCategoryId.HasValue && categories.All(item => item.Id != selectedCategoryId.Value))
+            {
+                selectedCategoryId = null;
+                ClearEditState();
+            }
+        }, "Failed to load categories");
+    }
+
+    private void SelectCategory(Guid categoryId)
+    {
+        selectedCategoryId = categoryId;
+        TicketCategorySummaryDto? category = categories.FirstOrDefault(item => item.Id == categoryId);
+        if (category is null)
+        {
+            ClearEditState();
+            return;
+        }
+
+        editCategoryName = category.Name;
+        editCategoryIsActive = category.IsActive;
+        editResolverGroupIdText = category.ResolverGroupId?.ToString() ?? string.Empty;
+    }
+
+    private async Task CreateCategoryAsync()
+    {
+        Guid? customerId = SelectedCustomerId;
+        if (!customerId.HasValue)
+        {
+            statusMessage = "Select a customer first.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newCategoryName))
+        {
+            statusMessage = "Category name is required.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            TicketCategorySummaryDto created = await Api.CreateTicketCategoryAsync(new CreateTicketCategoryRequest(
+                customerId.Value,
+                newCategoryName,
+                newCategoryIsActive,
+                ParseGuidNullable(newResolverGroupIdText)));
+
+            newCategoryName = string.Empty;
+            newCategoryIsActive = true;
+            newResolverGroupIdText = string.Empty;
+
+            await LoadCategoriesAsync();
+            SelectCategory(created.Id);
+        }, "Failed to create category");
+    }
+
+    private async Task UpdateCategoryAsync()
+    {
+        if (!selectedCategoryId.HasValue)
+        {
+            statusMessage = "Select a category first.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(editCategoryName))
+        {
+            statusMessage = "Category name is required.";
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            await Api.UpdateTicketCategoryAsync(
+                selectedCategoryId.Value,
+                new UpdateTicketCategoryRequest(editCategoryName, editCategoryIsActive, ParseGuidNullable(editResolverGroupIdText)));
+            await LoadCategoriesAsync();
+        }, "Failed to update category");
+    }
+
+    private async Task DeleteCategoryAsync()
+    {
+        if (!selectedCategoryId.HasValue)
+        {
+            statusMessage = "Select a category first.";
+            return;
+        }
+
+        Guid categoryId = selectedCategoryId.Value;
+        await RunBusyAsync(async () =>
+        {
+            await Api.DeleteTicketCategoryAsync(categoryId);
+            selectedCategoryId = null;
+            ClearEditState();
+            await LoadCategoriesAsync();
+        }, "Failed to delete category");
+    }
+
+    private string FormatResolverGroupName(Guid? resolverGroupId)
+    {
+        if (!resolverGroupId.HasValue)
+        {
+            return "None";
+        }
+
+        ResolverGroupSummaryDto? group = resolverGroups.FirstOrDefault(item => item.Id == resolverGroupId.Value);
+        return group is null ? resolverGroupId.Value.ToString() : group.Name;
+    }
+
+    private void ClearEditState()
+    {
+        editCategoryName = string.Empty;
+        editCategoryIsActive = true;
+        editResolverGroupIdText = string.Empty;
+    }
+
+    private async Task RunBusyAsync(Func<Task> action, string errorPrefix)
+    {
+        isBusy = true;
+        statusMessage = string.Empty;
+        try
+        {
+            await action();
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"{errorPrefix}: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static Guid? ParseGuidNullable(string raw)
+    {
+        return Guid.TryParse(raw, out Guid parsed) ? parsed : null;
+    }
+}

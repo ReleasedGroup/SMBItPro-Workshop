@@ -60,6 +60,18 @@ p {
     color: var(--ink-700);
 }
 
+h1,
+h2,
+h3,
+p,
+li,
+small,
+strong,
+span {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 .hero {
     padding-bottom: 1rem;
     border-bottom: 1px solid var(--line);
@@ -176,7 +188,7 @@ ul {
     display: grid;
     grid-template-columns: 1fr 2fr 1fr 1fr 1fr;
     gap: 0.45rem;
-    align-items: center;
+    align-items: start;
     border: 1px solid var(--line);
     border-radius: 0.75rem;
     background: #f9fbff;
@@ -184,6 +196,25 @@ ul {
     padding: 0.6rem 0.7rem;
     text-align: left;
     height: auto;
+}
+
+.panel,
+.kpi-card,
+.timeline-item,
+.ticket-row {
+    min-width: 0;
+}
+
+.panel > *,
+.kpi-card > *,
+.timeline-item > *,
+.ticket-row > * {
+    min-width: 0;
+}
+
+.ticket-row span {
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .ticket-row.selected {

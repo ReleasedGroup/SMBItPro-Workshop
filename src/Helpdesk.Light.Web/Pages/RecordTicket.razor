@@ -1,0 +1,94 @@
+@page "/record-ticket"
+@inject HelpdeskApiClient Api
+
+<PageTitle>Record A Ticket</PageTitle>
+
+<h1>Record A Support Ticket</h1>
+<p>Submit a ticket without signing in. We route by email domain and auto-create a customer when the domain is new.</p>
+
+<section class="panel login-panel">
+    <h2>Ticket Details</h2>
+
+    <label>
+        <span>Email</span>
+        <input type="email" @bind="email" placeholder="user@customer-domain.com" />
+    </label>
+
+    <label>
+        <span>Subject</span>
+        <input @bind="subject" />
+    </label>
+
+    <label>
+        <span>Description</span>
+        <textarea rows="5" @bind="description"></textarea>
+    </label>
+
+    <label>
+        <span>Priority</span>
+        <select @bind="priority">
+            @foreach (TicketPriority value in Enum.GetValues<TicketPriority>())
+            {
+                <option value="@value">@value</option>
+            }
+        </select>
+    </label>
+
+    <button type="button" @onclick="SubmitAsync" disabled="@isBusy">Submit Ticket</button>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <p class="status">@statusMessage</p>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(createdReferenceCode))
+    {
+        <p class="hint">Ticket created successfully: <strong>@createdReferenceCode</strong></p>
+    }
+</section>
+
+@code {
+    private bool isBusy;
+    private string email = string.Empty;
+    private string subject = string.Empty;
+    private string description = string.Empty;
+    private TicketPriority priority = TicketPriority.Medium;
+
+    private string statusMessage = string.Empty;
+    private string createdReferenceCode = string.Empty;
+
+    private async Task SubmitAsync()
+    {
+        statusMessage = string.Empty;
+        createdReferenceCode = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(description))
+        {
+            statusMessage = "Email, subject, and description are required.";
+            return;
+        }
+
+        isBusy = true;
+
+        try
+        {
+            CreateTicketRequest request = new(null, subject, description, priority, email);
+            TicketSummaryDto created = await Api.CreatePublicTicketAsync(request);
+
+            createdReferenceCode = created.ReferenceCode;
+            statusMessage = "Ticket submitted.";
+
+            subject = string.Empty;
+            description = string.Empty;
+            priority = TicketPriority.Medium;
+        }
+        catch (Exception exception)
+        {
+            statusMessage = $"Failed to submit ticket: {exception.Message}";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+}

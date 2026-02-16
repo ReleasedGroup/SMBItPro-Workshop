@@ -21,6 +21,7 @@ public static class DependencyInjection
             ?? "Data Source=helpdesk-light.db";
 
         services.AddDbContext<HelpdeskDbContext>(options => options.UseSqlite(connectionString));
+        services.AddHttpClient();
 
         services.Configure<AttachmentOptions>(configuration.GetSection(AttachmentOptions.SectionName));
         services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
@@ -39,7 +40,10 @@ public static class DependencyInjection
             .AddEntityFrameworkStores<HelpdeskDbContext>();
 
         services.AddSingleton<IRuntimeMetricsRecorder, RuntimeMetricsRecorder>();
+        services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
         services.AddScoped<ICustomerAdministrationService, CustomerAdministrationService>();
+        services.AddScoped<IResolverAdministrationService, ResolverAdministrationService>();
+        services.AddScoped<ITicketCategoryAdministrationService, TicketCategoryAdministrationService>();
         services.AddScoped<ITenantResolutionService, TenantResolutionService>();
         services.AddScoped<IAnalyticsService, AnalyticsService>();
         services.AddScoped<ITicketService, TicketService>();
@@ -47,7 +51,7 @@ public static class DependencyInjection
         services.AddScoped<IAttachmentStorage, LocalAttachmentStorage>();
         services.AddScoped<IInboundEmailService, InboundEmailService>();
         services.AddScoped<IOutboundEmailService, OutboundEmailService>();
-        services.AddScoped<IEmailTransport, ConsoleEmailTransport>();
+        services.AddScoped<IEmailTransport, ConfigurableEmailTransport>();
         services.AddScoped<IAiTicketAgentService, AiTicketAgentService>();
         services.AddScoped<ICustomerAiPolicyService, CustomerAiPolicyService>();
         services.AddScoped<IKnowledgeBaseService, KnowledgeBaseService>();

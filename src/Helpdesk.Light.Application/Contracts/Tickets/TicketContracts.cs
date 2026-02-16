@@ -3,11 +3,16 @@ using Helpdesk.Light.Domain.Tickets;
 
 namespace Helpdesk.Light.Application.Contracts.Tickets;
 
-public sealed record CreateTicketRequest(Guid? CustomerId, string Subject, string Description, TicketPriority Priority);
+public sealed record CreateTicketRequest(
+    Guid? CustomerId,
+    string Subject,
+    string Description,
+    TicketPriority Priority,
+    string? EndUserEmail = null);
 
 public sealed record TicketMessageCreateRequest(string Body);
 
-public sealed record TicketAssignRequest(Guid? AssignedToUserId);
+public sealed record TicketAssignRequest(Guid? AssignedToUserId, Guid? ResolverGroupId = null);
 
 public sealed record TicketStatusUpdateRequest(TicketStatus Status);
 
@@ -27,6 +32,7 @@ public sealed record TicketSummaryDto(
     string Subject,
     string Summary,
     Guid? AssignedToUserId,
+    Guid? ResolverGroupId,
     DateTime CreatedUtc,
     DateTime UpdatedUtc,
     DateTime? ResolvedUtc,

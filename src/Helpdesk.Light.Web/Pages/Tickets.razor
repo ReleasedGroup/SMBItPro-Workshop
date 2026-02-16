@@ -22,6 +22,10 @@ else
         <section class="panel">
             <h2>Create Ticket</h2>
             <label>
+                <span>End-user Email</span>
+                <input type="email" @bind="newTicketEndUserEmail" placeholder="user@customer-domain.com" />
+            </label>
+            <label>
                 <span>Subject</span>
                 <input @bind="newTicketSubject" />
             </label>
@@ -38,26 +42,7 @@ else
                     }
                 </select>
             </label>
-
-            @if (IsAdmin)
-            {
-                <label>
-                    <span>Customer (Admin only)</span>
-                    <InputSelect @bind-Value="newTicketCustomerId">
-                        @if (adminCustomers.Count == 0)
-                        {
-                            <option value="">No customers available</option>
-                        }
-                        else
-                        {
-                            @foreach (CustomerSummaryDto customer in adminCustomers)
-                            {
-                                <option value="@customer.Id">@customer.Name (@customer.Id)</option>
-                            }
-                        }
-                    </InputSelect>
-                </label>
-            }
+            <p class="hint">Customer is assigned from email domain; unknown domains are auto-provisioned as new customers.</p>
 
             <label>
                 <span>Attachments</span>
@@ -137,7 +122,8 @@ else
                 <h2>Ticket Detail</h2>
                 <p><strong>@selectedTicket.Ticket.ReferenceCode</strong> - @selectedTicket.Ticket.Subject</p>
                 <p>Status: @selectedTicket.Ticket.Status | Priority: @selectedTicket.Ticket.Priority | Category: @selectedTicket.Ticket.Category</p>
-                <p>Assigned: @selectedTicket.Ticket.AssignedToUserId</p>
+                <p>Assigned User: @(selectedTicket.Ticket.AssignedToUserId?.ToString() ?? "Unassigned")</p>
+                <p>Assigned Resolver Group: @(selectedTicket.Ticket.ResolverGroupId?.ToString() ?? "Unassigned")</p>
 
                 <h3>Conversation Timeline</h3>
                 <div class="timeline">
@@ -182,9 +168,26 @@ else
                 <section class="panel">
                     <h2>Technician Actions</h2>
                     <label>
-                        <span>Assign To User Id</span>
-                        <input @bind="assignToUserIdText" placeholder="Guid (empty to clear)" />
+                        <span>Assign To Resolver User</span>
+                        <select @bind="assignToUserIdText">
+                            <option value="">Unassigned</option>
+                            @foreach (ResolverUserSummaryDto user in resolverUsers)
+                            {
+                                <option value="@user.Id">@FormatResolverUserOption(user)</option>
+                            }
+                        </select>
                     </label>
+                    <label>
+                        <span>Assign To Resolver Group</span>
+                        <select @bind="assignResolverGroupIdText">
+                            <option value="">Unassigned</option>
+                            @foreach (ResolverGroupSummaryDto group in resolverGroups)
+                            {
+                                <option value="@group.Id">@group.Name (@(group.IsActive ? "Active" : "Inactive"))</option>
+                            }
+                        </select>
+                    </label>
+                    <p class="hint">Choose either resolver user or resolver group, or clear both.</p>
                     <button type="button" @onclick="AssignAsync" disabled="@isBusy">Apply Assignment</button>
 
                     <label>
@@ -209,8 +212,14 @@ else
                     </label>
                     <label>
                         <span>Triage Category</span>
-                        <input @bind="manageCategory" />
+                        <input @bind="manageCategory" list="category-options" />
                     </label>
+                    <datalist id="category-options">
+                        @foreach (TicketCategorySummaryDto category in manageCategories)
+                        {
+                            <option value="@category.Name"></option>
+                        }
+                    </datalist>
                     <button type="button" @onclick="UpdateTriageAsync" disabled="@isBusy">Update Triage</button>
                 </section>
 
@@ -252,7 +261,6 @@ else
 }
 
 @code {
-    private readonly List<CustomerSummaryDto> adminCustomers = [];
     private readonly List<TicketSummaryDto> tickets = [];
 
     private TicketDetailDto? selectedTicket;
@@ -261,8 +269,8 @@ else
 
     private string newTicketSubject = string.Empty;
     private string newTicketDescription = string.Empty;
+    private string newTicketEndUserEmail = string.Empty;
     private TicketPriority newTicketPriority = TicketPriority.Medium;
-    private Guid? newTicketCustomerId;
     private IReadOnlyList<IBrowserFile> createAttachments = [];
 
     private string filterStatusText = string.Empty;
@@ -271,7 +279,11 @@ else
     private string filterAssignedToText = string.Empty;
 
     private string newMessageBody = string.Empty;
+    private readonly List<ResolverUserSummaryDto> resolverUsers = [];
+    private readonly List<ResolverGroupSummaryDto> resolverGroups = [];
+    private readonly List<TicketCategorySummaryDto> manageCategories = [];
     private string assignToUserIdText = string.Empty;
+    private string assignResolverGroupIdText = string.Empty;
     private TicketStatus manageStatus = TicketStatus.InProgress;
     private TicketPriority managePriority = TicketPriority.Medium;
     private string manageCategory = string.Empty;
@@ -286,7 +298,11 @@ else
         Session.Changed += OnSessionChanged;
         if (Session.IsAuthenticated)
         {
-            await EnsureAdminCustomersLoadedAsync();
+            if (IsEndUser)
+            {
+                newTicketEndUserEmail = Session.Email;
+            }
+
             await LoadTicketsAsync();
         }
     }
@@ -297,13 +313,15 @@ else
         {
             if (Session.IsAuthenticated)
             {
-                await EnsureAdminCustomersLoadedAsync();
+                if (IsEndUser)
+                {
+                    newTicketEndUserEmail = Session.Email;
+                }
+
                 await LoadTicketsAsync();
             }
             else
             {
-                adminCustomers.Clear();
-                newTicketCustomerId = null;
                 tickets.Clear();
                 selectedTicket = null;
             }
@@ -357,9 +375,21 @@ else
         try
         {
             selectedTicket = await Api.GetTicketAsync(ticketId);
-            if (selectedTicket is not null && selectedTicket.LatestAiSuggestion is not null)
+            if (selectedTicket is not null)
             {
-                aiEditedResponse = selectedTicket.LatestAiSuggestion.DraftResponse;
+                assignToUserIdText = selectedTicket.Ticket.AssignedToUserId?.ToString() ?? string.Empty;
+                assignResolverGroupIdText = selectedTicket.Ticket.ResolverGroupId?.ToString() ?? string.Empty;
+                if (CanManage)
+                {
+                    await LoadResolverOptionsAsync(selectedTicket.Ticket.CustomerId);
+                    await LoadManageCategoriesAsync(selectedTicket.Ticket.CustomerId);
+                }
+
+                if (selectedTicket.LatestAiSuggestion is not null)
+                {
+                    aiEditedResponse = selectedTicket.LatestAiSuggestion.DraftResponse;
+                }
+
                 managePriority = selectedTicket.Ticket.Priority;
                 manageStatus = selectedTicket.Ticket.Status;
                 manageCategory = selectedTicket.Ticket.Category ?? string.Empty;
@@ -383,14 +413,10 @@ else
             return;
         }
 
-        if (IsAdmin)
+        if (string.IsNullOrWhiteSpace(newTicketEndUserEmail))
         {
-            await EnsureAdminCustomersLoadedAsync();
-            if (!newTicketCustomerId.HasValue)
-            {
-                statusMessage = "Select a customer before creating an admin ticket.";
-                return;
-            }
+            statusMessage = "End-user email is required.";
+            return;
         }
 
         isBusy = true;
@@ -398,8 +424,7 @@ else
 
         try
         {
-            Guid? customerId = IsAdmin ? newTicketCustomerId : null;
-            CreateTicketRequest request = new(customerId, newTicketSubject, newTicketDescription, newTicketPriority);
+            CreateTicketRequest request = new(null, newTicketSubject, newTicketDescription, newTicketPriority, newTicketEndUserEmail);
             TicketSummaryDto created = await Api.CreateTicketAsync(request);
 
             foreach (IBrowserFile file in createAttachments)
@@ -411,9 +436,13 @@ else
             newTicketSubject = string.Empty;
             newTicketDescription = string.Empty;
             newTicketPriority = TicketPriority.Medium;
-            if (IsAdmin && !newTicketCustomerId.HasValue && adminCustomers.Count > 0)
+            if (IsEndUser)
             {
-                newTicketCustomerId = adminCustomers[0].Id;
+                newTicketEndUserEmail = Session.Email;
+            }
+            else
+            {
+                newTicketEndUserEmail = string.Empty;
             }
             createAttachments = [];
 
@@ -506,7 +535,15 @@ else
         try
         {
             Guid? assignedTo = ParseGuidNullable(assignToUserIdText);
-            await Api.AssignAsync(selectedTicket.Ticket.Id, new TicketAssignRequest(assignedTo));
+            Guid? resolverGroupId = ParseGuidNullable(assignResolverGroupIdText);
+
+            if (assignedTo.HasValue && resolverGroupId.HasValue)
+            {
+                statusMessage = "Choose a resolver user or resolver group, not both.";
+                return;
+            }
+
+            await Api.AssignAsync(selectedTicket.Ticket.Id, new TicketAssignRequest(assignedTo, resolverGroupId));
             await LoadTicketsAsync();
             await SelectTicketAsync(selectedTicket.Ticket.Id);
         }
@@ -518,6 +555,22 @@ else
         {
             isBusy = false;
         }
+    }
+
+    private async Task LoadResolverOptionsAsync(Guid customerId)
+    {
+        ResolverAssignmentOptionsDto options = await Api.GetResolverAssignmentOptionsAsync(customerId);
+        resolverUsers.Clear();
+        resolverUsers.AddRange(options.Users);
+        resolverGroups.Clear();
+        resolverGroups.AddRange(options.Groups);
+    }
+
+    private async Task LoadManageCategoriesAsync(Guid customerId)
+    {
+        IReadOnlyList<TicketCategorySummaryDto> categories = await Api.ListTicketCategoriesAsync(customerId);
+        manageCategories.Clear();
+        manageCategories.AddRange(categories.Where(item => item.IsActive).OrderBy(item => item.Name));
     }
 
     private async Task UpdateStatusAsync()
@@ -660,28 +713,9 @@ else
         return null;
     }
 
-    private async Task EnsureAdminCustomersLoadedAsync()
+    private static string FormatResolverUserOption(ResolverUserSummaryDto user)
     {
-        if (!IsAdmin)
-        {
-            adminCustomers.Clear();
-            newTicketCustomerId = null;
-            return;
-        }
-
-        if (adminCustomers.Count > 0)
-        {
-            return;
-        }
-
-        IReadOnlyList<CustomerSummaryDto> customers = await Api.ListCustomersAsync();
-        adminCustomers.Clear();
-        adminCustomers.AddRange(customers);
-
-        if (!newTicketCustomerId.HasValue && adminCustomers.Count > 0)
-        {
-            newTicketCustomerId = adminCustomers[0].Id;
-        }
+        return $"{user.DisplayName} ({user.Role}) - {user.Email}";
     }
 
     public void Dispose()

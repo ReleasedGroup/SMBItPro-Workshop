@@ -30,11 +30,38 @@
             <span class="nav-arrow" aria-hidden="true">></span>
         </NavLink>
 
+        <NavLink href="/record-ticket" class="nav-item" @onclick="HandleNavigate">
+            <span class="nav-icon">RT</span>
+            <span class="nav-copy">
+                <span class="nav-label">Record Ticket</span>
+                <small>Public ticket submission form</small>
+            </span>
+            <span class="nav-arrow" aria-hidden="true">></span>
+        </NavLink>
+
         <NavLink href="/customers" class="nav-item" @onclick="HandleNavigate">
             <span class="nav-icon">CU</span>
             <span class="nav-copy">
                 <span class="nav-label">Customers</span>
                 <small>Tenant and domain mappings</small>
+            </span>
+            <span class="nav-arrow" aria-hidden="true">></span>
+        </NavLink>
+
+        <NavLink href="/resolver-groups" class="nav-item" @onclick="HandleNavigate">
+            <span class="nav-icon">RG</span>
+            <span class="nav-copy">
+                <span class="nav-label">Resolver Groups</span>
+                <small>Resolver routing groups and assignment</small>
+            </span>
+            <span class="nav-arrow" aria-hidden="true">></span>
+        </NavLink>
+
+        <NavLink href="/ticket-categories" class="nav-item" @onclick="HandleNavigate">
+            <span class="nav-icon">TC</span>
+            <span class="nav-copy">
+                <span class="nav-label">Ticket Categories</span>
+                <small>Category taxonomy and resolver mapping</small>
             </span>
             <span class="nav-arrow" aria-hidden="true">></span>
         </NavLink>
@@ -53,6 +80,15 @@
             <span class="nav-copy">
                 <span class="nav-label">Knowledge</span>
                 <small>Drafts, publish, and archive lifecycle</small>
+            </span>
+            <span class="nav-arrow" aria-hidden="true">></span>
+        </NavLink>
+
+        <NavLink href="/settings" class="nav-item" @onclick="HandleNavigate">
+            <span class="nav-icon">ST</span>
+            <span class="nav-copy">
+                <span class="nav-label">Settings</span>
+                <small>AI and outbound email configuration</small>
             </span>
             <span class="nav-arrow" aria-hidden="true">></span>
         </NavLink>

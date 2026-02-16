@@ -2,15 +2,14 @@ using System.Text.Json;
 using Helpdesk.Light.Application.Abstractions;
 using Helpdesk.Light.Application.Abstractions.Ai;
 using Helpdesk.Light.Application.Contracts.Ai;
+using Helpdesk.Light.Application.Contracts;
 using Helpdesk.Light.Application.Errors;
 using Helpdesk.Light.Domain.Ai;
 using Helpdesk.Light.Domain.Security;
 using Helpdesk.Light.Domain.Tickets;
 using Helpdesk.Light.Infrastructure.Data;
-using Helpdesk.Light.Infrastructure.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 
@@ -20,21 +19,19 @@ public sealed class KnowledgeBaseService : IKnowledgeBaseService
 {
     private readonly HelpdeskDbContext dbContext;
     private readonly ITenantContextAccessor tenantContextAccessor;
-    private readonly AiOptions aiOptions;
+    private readonly IPlatformSettingsService platformSettingsService;
     private readonly ILogger<KnowledgeBaseService> logger;
-    private readonly Kernel? kernel;
 
     public KnowledgeBaseService(
         HelpdeskDbContext dbContext,
         ITenantContextAccessor tenantContextAccessor,
-        IOptions<AiOptions> options,
+        IPlatformSettingsService platformSettingsService,
         ILogger<KnowledgeBaseService> logger)
     {
         this.dbContext = dbContext;
         this.tenantContextAccessor = tenantContextAccessor;
-        aiOptions = options.Value;
+        this.platformSettingsService = platformSettingsService;
         this.logger = logger;
-        kernel = BuildKernel(aiOptions);
     }
 
     public async Task<IReadOnlyList<KnowledgeArticleSummaryDto>> ListAsync(KnowledgeArticleListRequest request, CancellationToken cancellationToken = default)
@@ -221,15 +218,15 @@ public sealed class KnowledgeBaseService : IKnowledgeBaseService
         return ToDetail(article);
     }
 
-    private static Kernel? BuildKernel(AiOptions options)
+    private static Kernel? BuildKernel(RuntimePlatformSettings settings)
     {
-        if (!options.EnableAi || string.IsNullOrWhiteSpace(options.OpenAIApiKey))
+        if (!settings.EnableAi || string.IsNullOrWhiteSpace(settings.OpenAIApiKey))
         {
             return null;
         }
 
         IKernelBuilder builder = Kernel.CreateBuilder();
-        builder.AddOpenAIChatCompletion(options.ModelId, options.OpenAIApiKey);
+        builder.AddOpenAIChatCompletion(settings.ModelId, settings.OpenAIApiKey);
         return builder.Build();
     }
 
@@ -240,6 +237,8 @@ public sealed class KnowledgeBaseService : IKnowledgeBaseService
     {
         string fallbackTitle = $"Runbook: {ticket.Subject}";
         string fallbackMarkdown = BuildFallbackArticleMarkdown(ticket, messages);
+        RuntimePlatformSettings runtimeSettings = await platformSettingsService.GetRuntimeSettingsAsync(cancellationToken);
+        Kernel? kernel = BuildKernel(runtimeSettings);
 
         if (kernel is null)
         {
