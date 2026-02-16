@@ -1,7 +1,9 @@
+using System.Text.Json;
 using Helpdesk.Light.Application.Abstractions;
 using Helpdesk.Light.Application.Contracts;
 using Helpdesk.Light.Application.Errors;
 using Helpdesk.Light.Domain.Entities;
+using Helpdesk.Light.Domain.Tickets;
 using Helpdesk.Light.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -26,6 +28,12 @@ public sealed class CustomerAdministrationService(
 
         Customer customer = new(Guid.NewGuid(), request.Name, request.IsActive);
         dbContext.Customers.Add(customer);
+        AddAuditEvent(
+            customer.Id,
+            tenantContextAccessor.Current.UserId,
+            "admin.customer.created",
+            new { customerId = customer.Id, customer.Name, customer.IsActive });
+
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return new CustomerSummaryDto(customer.Id, customer.Name, customer.IsActive, 0);
@@ -42,6 +50,11 @@ public sealed class CustomerAdministrationService(
 
         CustomerDomain domain = customer.AddDomain(Guid.NewGuid(), request.Domain, request.IsPrimary);
         dbContext.CustomerDomains.Add(domain);
+        AddAuditEvent(
+            customer.Id,
+            tenantContextAccessor.Current.UserId,
+            "admin.customer.domain.added",
+            new { customerId = customer.Id, domainId = domain.Id, domain.Domain, domain.IsPrimary });
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -89,5 +102,16 @@ public sealed class CustomerAdministrationService(
             .ToList();
 
         return new CustomerDetailDto(customer.Id, customer.Name, customer.IsActive, domains);
+    }
+
+    private void AddAuditEvent(Guid customerId, Guid? actorUserId, string eventType, object payload)
+    {
+        dbContext.AuditEvents.Add(new AuditEvent(
+            Guid.NewGuid(),
+            customerId,
+            actorUserId,
+            eventType,
+            JsonSerializer.Serialize(payload),
+            DateTime.UtcNow));
     }
 }

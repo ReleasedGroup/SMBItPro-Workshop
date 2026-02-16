@@ -25,6 +25,12 @@ dotnet build Helpdesk.Light.slnx -warnaserror
 dotnet test Helpdesk.Light.slnx
 ```
 
+CI-ready test command:
+
+```bash
+dotnet test Helpdesk.Light.slnx --configuration Release --no-build
+```
+
 ## Run API
 
 ```bash
@@ -54,3 +60,26 @@ The API base URL is configured in `src/Helpdesk.Light.Web/wwwroot/appsettings.js
 ```bash
 dotnet run --project src/Helpdesk.Light.Worker
 ```
+
+## Health, Analytics, and Operations Endpoints
+
+- `GET /health/live` (anonymous)
+- `GET /health/ready` (anonymous)
+- `GET /api/v1/analytics/dashboard` (authenticated, tenant-scoped)
+- `GET /api/v1/ops/metrics` (MSP admin)
+- `GET /api/v1/ops/dead-letters` (MSP admin)
+- `POST /api/v1/email/outbound/retry-dead-letter` (MSP admin)
+
+KPI definitions are documented in `Helpdesk-Light/03-KPI-Definitions.md`.
+
+## Backup and Restore
+
+- Backup: `./scripts/backup-helpdesk.sh`
+- Restore: `./scripts/restore-helpdesk.sh`
+- Runbook: `docs/operations-runbook.md`
+
+## Deployment
+
+- Deployment docs: `docs/deployment.md`
+- Config templates: `deploy/`
+- Container assets: `docker/` + `docker-compose.yml`

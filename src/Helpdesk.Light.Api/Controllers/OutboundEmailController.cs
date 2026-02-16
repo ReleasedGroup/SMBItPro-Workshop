@@ -32,4 +32,12 @@ public sealed class OutboundEmailController(
         await outboundEmailService.DispatchPendingAsync(cancellationToken);
         return NoContent();
     }
+
+    [HttpPost("retry-dead-letter")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult<object>> RetryDeadLetter([FromQuery] int take, CancellationToken cancellationToken)
+    {
+        int retried = await outboundEmailService.RetryDeadLettersAsync(take <= 0 ? 50 : take, cancellationToken);
+        return Ok(new { retried });
+    }
 }

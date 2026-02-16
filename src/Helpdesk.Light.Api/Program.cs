@@ -1,15 +1,22 @@
 using System.Text;
+using System.Text.Json;
 using Helpdesk.Light.Application.Abstractions;
+using Helpdesk.Light.Api.Observability;
 using Helpdesk.Light.Api.Auth;
 using Helpdesk.Light.Api.Tenancy;
 using Helpdesk.Light.Domain.Security;
 using Helpdesk.Light.Infrastructure;
 using Helpdesk.Light.Infrastructure.Data;
+using Helpdesk.Light.Infrastructure.Health;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+builder.Logging.ClearProviders();
+builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
 
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 JwtOptions jwtOptions = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
@@ -67,6 +74,11 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+builder.Services
+    .AddHealthChecks()
+    .AddCheck<SqliteHealthCheck>("sqlite", tags: ["ready"])
+    .AddCheck<MailAdapterHealthCheck>("mail_adapter", tags: ["ready"])
+    .AddCheck<AiProviderHealthCheck>("ai_provider", tags: ["ready"]);
 
 WebApplication app = builder.Build();
 
@@ -76,13 +88,46 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("Frontend");
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = WriteHealthResponse
+}).AllowAnonymous();
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = _ => true,
+    ResponseWriter = WriteHealthResponse
+}).AllowAnonymous();
 
 await SeedData.EnsureSeededAsync(app.Services);
 
 app.Run();
+
+static Task WriteHealthResponse(HttpContext context, HealthReport report)
+{
+    context.Response.ContentType = "application/json";
+
+    var payload = new
+    {
+        status = report.Status.ToString(),
+        totalDurationMs = report.TotalDuration.TotalMilliseconds,
+        entries = report.Entries.ToDictionary(
+            item => item.Key,
+            item => new
+            {
+                status = item.Value.Status.ToString(),
+                description = item.Value.Description,
+                durationMs = item.Value.Duration.TotalMilliseconds
+            })
+    };
+
+    return context.Response.WriteAsync(JsonSerializer.Serialize(payload));
+}
 
 public partial class Program;

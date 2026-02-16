@@ -8,5 +8,7 @@ public interface IOutboundEmailService
 
     Task DispatchPendingAsync(CancellationToken cancellationToken = default);
 
+    Task<int> RetryDeadLettersAsync(int take = 50, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<OutboundEmailDto>> ListAsync(Guid? customerId, CancellationToken cancellationToken = default);
 }

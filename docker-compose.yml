@@ -1,0 +1,55 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: helpdesk-light-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Helpdesk: Data Source=/data/helpdesk-light.db
+      Attachments__RootPath: /data/attachments
+      Jwt__Issuer: Helpdesk-Light
+      Jwt__Audience: Helpdesk-Light-Clients
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:-change-me-with-32-characters-minimum}
+      Email__MaxRetryCount: 3
+      Ai__ModelId: gpt-5.2
+      Ai__EnableAi: ${AI_ENABLED:-true}
+      Ai__AutoRunOnCreateOrUpdate: true
+      Ai__OpenAIApiKey: ${OPENAI_API_KEY:-}
+      Cors__Frontend__AllowedOrigins__0: http://localhost:8082
+    ports:
+      - "8080:8080"
+    volumes:
+      - helpdesk_data:/data
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    container_name: helpdesk-light-worker
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Helpdesk: Data Source=/data/helpdesk-light.db
+      Attachments__RootPath: /data/attachments
+      Email__MaxRetryCount: 3
+      Ai__ModelId: gpt-5.2
+      Ai__EnableAi: ${AI_ENABLED:-true}
+      Ai__AutoRunOnCreateOrUpdate: true
+      Ai__OpenAIApiKey: ${OPENAI_API_KEY:-}
+    depends_on:
+      - api
+    volumes:
+      - helpdesk_data:/data
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    container_name: helpdesk-light-web
+    ports:
+      - "8082:8080"
+    depends_on:
+      - api
+
+volumes:
+  helpdesk_data:

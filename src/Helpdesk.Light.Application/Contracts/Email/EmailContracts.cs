@@ -24,4 +24,5 @@ public sealed record OutboundEmailDto(
     int AttemptCount,
     string? LastError,
     DateTime CreatedUtc,
-    DateTime? SentUtc);
+    DateTime? SentUtc,
+    DateTime? DeadLetteredUtc);

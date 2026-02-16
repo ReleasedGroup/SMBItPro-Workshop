@@ -38,8 +38,10 @@ public static class DependencyInjection
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<HelpdeskDbContext>();
 
+        services.AddSingleton<IRuntimeMetricsRecorder, RuntimeMetricsRecorder>();
         services.AddScoped<ICustomerAdministrationService, CustomerAdministrationService>();
         services.AddScoped<ITenantResolutionService, TenantResolutionService>();
+        services.AddScoped<IAnalyticsService, AnalyticsService>();
         services.AddScoped<ITicketService, TicketService>();
         services.AddScoped<ITicketAccessGuard, TicketAccessGuard>();
         services.AddScoped<IAttachmentStorage, LocalAttachmentStorage>();
@@ -48,6 +50,7 @@ public static class DependencyInjection
         services.AddScoped<IEmailTransport, ConsoleEmailTransport>();
         services.AddScoped<IAiTicketAgentService, AiTicketAgentService>();
         services.AddScoped<ICustomerAiPolicyService, CustomerAiPolicyService>();
+        services.AddScoped<IKnowledgeBaseService, KnowledgeBaseService>();
 
         return services;
     }
