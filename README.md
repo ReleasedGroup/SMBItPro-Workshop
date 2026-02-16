@@ -78,7 +78,7 @@ Seeded users:
 dotnet run --project src/Helpdesk.Light.Web
 ```
 
-Default UI URL: `http://localhost:5167`.
+Default UI URL: `http://localhost:5006`.
 
 The API base URL is configured in `src/Helpdesk.Light.Web/wwwroot/appsettings.json` via `ApiBaseUrl`.
 
@@ -108,6 +108,7 @@ KPI definitions are documented in `Helpdesk-Light/03-KPI-Definitions.md`.
 ## Deployment
 
 - Deployment docs: `docs/deployment.md`
+- Local run guide: `docs/local-development-guide.md`
 - Release readiness and hardening checklist: `docs/release-readiness-security.md`
 - Config templates: `deploy/`
 - Container assets: `docker/` + `docker-compose.yml`
