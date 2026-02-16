@@ -51,7 +51,11 @@ dotnet build Helpdesk.Light.slnx -warnaserror
 
 ### 3.2 API base URL behavior
 
-By default, the Web app auto-selects local API URLs when `ApiBaseUrl` is empty:
+The Web app is pre-configured for local development:
+
+- `src/Helpdesk.Light.Web/wwwroot/appsettings.Development.json` points to `http://localhost:5283/`
+
+When a value is not explicitly configured, the Web app auto-selects local API URLs:
 
 - Web on `http://localhost:5006` or `https://localhost:7262` -> API `http://localhost:5283/`
 - Web on `http://localhost:8082` -> API `http://localhost:8080/`
