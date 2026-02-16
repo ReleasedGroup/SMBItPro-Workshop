@@ -49,20 +49,22 @@ dotnet restore Helpdesk.Light.slnx
 dotnet build Helpdesk.Light.slnx -warnaserror
 ```
 
-### 3.2 Align Web API base URL
+### 3.2 API base URL behavior
 
-The Web app reads `ApiBaseUrl` from `src/Helpdesk.Light.Web/wwwroot/appsettings.json`.
+The Web app is pre-configured for local development:
 
-Before starting, ensure it matches the API URL you will run:
+- `src/Helpdesk.Light.Web/wwwroot/appsettings.Development.json` points to `http://localhost:5283/`
 
-- If API runs on launch profile default: use `http://localhost:5283/`
-- If API runs on a custom URL: update `ApiBaseUrl` to that URL
+When a value is not explicitly configured, the Web app auto-selects local API URLs:
 
-Example (`src/Helpdesk.Light.Web/wwwroot/appsettings.json`):
+- Web on `http://localhost:5006` or `https://localhost:7262` -> API `http://localhost:5283/`
+- Web on `http://localhost:8082` -> API `http://localhost:8080/`
+
+If you run API on a custom URL, set it in `src/Helpdesk.Light.Web/wwwroot/appsettings.json`:
 
 ```json
 {
-  "ApiBaseUrl": "http://localhost:5283/"
+  "ApiBaseUrl": "http://localhost:<custom-port>/"
 }
 ```
 
@@ -158,6 +160,9 @@ curl http://localhost:5283/health/live
 curl http://localhost:5283/health/ready
 ```
 
+Note: browsing API root (`/`) can return `401 Unauthorized` because most API routes require authentication.  
+Use `/health/live` or `/health/ready` for anonymous reachability checks.
+
 Docker run:
 
 ```bash
@@ -226,6 +231,12 @@ Fix: Use default Web URLs (`http://localhost:5006`, `https://localhost:7262`) or
 Cause: Missing/expired JWT or invalid credentials.
 
 Fix: Re-run login endpoint and use returned `accessToken`.
+
+### Symptom: API root (`/`) returns `401`, but health endpoints are `200`
+
+Cause: Expected behavior. The API uses authenticated fallback policy for most routes.
+
+Fix: Use `/health/live` and `/health/ready` as anonymous checks; use `/api/v1/auth/login` for authenticated flows.
 
 ### Symptom: Worker appears idle
 

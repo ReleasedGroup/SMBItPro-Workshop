@@ -81,6 +81,8 @@ dotnet run --project src/Helpdesk.Light.Web
 Default UI URL: `http://localhost:5006`.
 
 The API base URL is configured in `src/Helpdesk.Light.Web/wwwroot/appsettings.json` via `ApiBaseUrl`.
+Local development is preconfigured in `src/Helpdesk.Light.Web/wwwroot/appsettings.Development.json` to use `http://localhost:5283/`.
+When `ApiBaseUrl` is empty, Web defaults to `http://localhost:5283/` for native runs and `http://localhost:8080/` for Docker Web on `http://localhost:8082`.
 
 ## Run Worker
 
