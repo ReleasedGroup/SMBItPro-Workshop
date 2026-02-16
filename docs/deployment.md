@@ -1,5 +1,7 @@
 # Deployment and Environment Configuration
 
+For local end-to-end setup, see `docs/local-development-guide.md`.
+
 ## 1. Components
 
 The platform deploys three services:
