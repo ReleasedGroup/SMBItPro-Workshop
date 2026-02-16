@@ -72,6 +72,12 @@ Seeded users:
 - `tech@contoso.com` / `Pass!12345` (`Technician`, Contoso tenant)
 - `tech@fabrikam.com` / `Pass!12345` (`Technician`, Fabrikam tenant)
 
+Windows quick-start script:
+
+```powershell
+.\scripts\run-helpdesk-windows.ps1
+```
+
 ## Run Blazor WebAssembly UI
 
 ```bash

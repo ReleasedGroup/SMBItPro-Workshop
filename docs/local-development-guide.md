@@ -42,6 +42,27 @@ Default local data paths:
 
 ## 3. Option A: Run with Native .NET Processes
 
+### 3.0 One-command Windows startup
+
+For Windows, use the bundled bootstrap script:
+
+```powershell
+.\scripts\run-helpdesk-windows.ps1
+```
+
+What it does:
+
+- validates tooling (`dotnet`),
+- configures local Web API URL defaults,
+- restores and builds the solution,
+- launches API, Worker, and Web in separate PowerShell windows.
+
+Useful flags:
+
+- `-StopExisting` to terminate existing Helpdesk dotnet processes first.
+- `-SkipBrowser` to avoid auto-opening `http://localhost:5006`.
+- `-SkipRestore` / `-SkipBuild` for faster reruns when dependencies are already prepared.
+
 ### 3.1 Restore and build once
 
 ```bash
